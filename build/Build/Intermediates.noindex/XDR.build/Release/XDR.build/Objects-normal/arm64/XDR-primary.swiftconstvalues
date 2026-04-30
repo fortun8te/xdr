@@ -1,0 +1,1186 @@
+[
+  {
+    "typeName": "XDR.ToggleXDRIntent",
+    "mangledTypeName": "3XDR15ToggleXDRIntentV",
+    "kind": "struct",
+    "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+    "line": 7,
+    "conformances": [
+      "AppIntents.AppIntent",
+      "AppIntents.PersistentlyIdentifiable",
+      "AppIntents._SupportsAppDependencies",
+      "Swift.Sendable",
+      "Swift.SendableMetatype"
+    ],
+    "allConformances": [
+      {
+        "protocolName": "AppIntents.AppIntent",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents.PersistentlyIdentifiable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents._SupportsAppDependencies",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.Sendable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.SendableMetatype",
+        "conformanceDefiningModule": "XDR"
+      }
+    ],
+    "associatedTypeAliases": [
+      {
+        "typeAliasName": "PerformResult",
+        "substitutedTypeName": "some AppIntents.ReturnsValue<Swift.Bool>",
+        "substitutedMangledTypeName": "3XDR15ToggleXDRIntentV7performQryYaKFQOy_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ReturnsValue"
+        ],
+        "opaqueTypeSameTypeRequirements": [
+          {
+            "typeAliasName": "AppIntents.IntentResult.Value",
+            "substitutedTypeName": "Swift.Bool",
+            "substitutedMangledTypeName": "Sb"
+          }
+        ]
+      },
+      {
+        "typeAliasName": "SummaryContent",
+        "substitutedTypeName": "some AppIntents.ParameterSummary",
+        "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy3XDR15ToggleXDRIntentV_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ParameterSummary"
+        ],
+        "opaqueTypeSameTypeRequirements": []
+      }
+    ],
+    "properties": [
+      {
+        "label": "_enable",
+        "type": "AppIntents.IntentParameter<Swift.Optional<Swift.Bool>>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 12,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.Optional<Swift.Bool>>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Enable XDR"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "default",
+              "type": "Swift.Optional<Swift.Bool>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "displayName",
+              "type": "Swift.Optional<Swift.Bool.IntentDisplayName>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            }
+          ]
+        }
+      },
+      {
+        "label": "title",
+        "type": "Foundation.LocalizedStringResource",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 8,
+        "valueKind": "RawLiteral",
+        "value": "Toggle XDR Brightness"
+      },
+      {
+        "label": "description",
+        "type": "AppIntents.IntentDescription",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 9,
+        "valueKind": "RawLiteral",
+        "value": "Toggles extended brightness on the primary display"
+      },
+      {
+        "label": "enable",
+        "type": "Swift.Optional<Swift.Bool>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 12,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.Optional<Swift.Bool>>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Enable XDR"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "default",
+              "type": "Swift.Optional<Swift.Bool>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "displayName",
+              "type": "Swift.Optional<Swift.Bool.IntentDisplayName>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            }
+          ]
+        },
+        "propertyWrappers": [
+          {
+            "type": "AppIntents.IntentParameter",
+            "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+            "line": 11,
+            "arguments": [
+              {
+                "label": "title",
+                "type": "Foundation.LocalizedStringResource",
+                "valueKind": "RawLiteral",
+                "value": "Enable XDR"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "$enable",
+        "type": "AppIntents.IntentParameter<Swift.Optional<Swift.Bool>>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 12,
+        "valueKind": "Runtime"
+      }
+    ]
+  },
+  {
+    "typeName": "XDR.SetBrightnessIntent",
+    "mangledTypeName": "3XDR19SetBrightnessIntentV",
+    "kind": "struct",
+    "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+    "line": 45,
+    "conformances": [
+      "AppIntents.AppIntent",
+      "AppIntents.PersistentlyIdentifiable",
+      "AppIntents._SupportsAppDependencies",
+      "Swift.Sendable",
+      "Swift.SendableMetatype"
+    ],
+    "allConformances": [
+      {
+        "protocolName": "AppIntents.AppIntent",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents.PersistentlyIdentifiable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents._SupportsAppDependencies",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.Sendable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.SendableMetatype",
+        "conformanceDefiningModule": "XDR"
+      }
+    ],
+    "associatedTypeAliases": [
+      {
+        "typeAliasName": "PerformResult",
+        "substitutedTypeName": "some AppIntents.IntentResult",
+        "substitutedMangledTypeName": "3XDR19SetBrightnessIntentV7performQryYaKFQOy_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.IntentResult"
+        ],
+        "opaqueTypeSameTypeRequirements": []
+      },
+      {
+        "typeAliasName": "SummaryContent",
+        "substitutedTypeName": "some AppIntents.ParameterSummary",
+        "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy3XDR013SetBrightnessC0V_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ParameterSummary"
+        ],
+        "opaqueTypeSameTypeRequirements": []
+      }
+    ],
+    "properties": [
+      {
+        "label": "_nits",
+        "type": "AppIntents.IntentParameter<Swift.Int>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 50,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.Int>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Brightness (nits)"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "default",
+              "type": "Swift.Optional<Swift.Int>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "controlStyle",
+              "type": "AppIntents.IntentParameter<Swift.Int>.IntControlStyle",
+              "valueKind": "Runtime"
+            },
+            {
+              "label": "inclusiveRange",
+              "type": "Swift.Optional<(lowerBound: Swift.Int, upperBound: Swift.Int)>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            }
+          ]
+        }
+      },
+      {
+        "label": "_displayName",
+        "type": "AppIntents.IntentParameter<Swift.Optional<Swift.String>>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 53,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.Optional<Swift.String>>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Display Name"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "default",
+              "type": "Swift.Optional<Swift.String>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputOptions",
+              "type": "Swift.Optional<Swift.String.IntentInputOptions>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            }
+          ]
+        }
+      },
+      {
+        "label": "title",
+        "type": "Foundation.LocalizedStringResource",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 46,
+        "valueKind": "RawLiteral",
+        "value": "Set Display Brightness"
+      },
+      {
+        "label": "description",
+        "type": "AppIntents.IntentDescription",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 47,
+        "valueKind": "RawLiteral",
+        "value": "Sets the display brightness to a specific nit value"
+      },
+      {
+        "label": "nits",
+        "type": "Swift.Int",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 50,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.Int>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Brightness (nits)"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "default",
+              "type": "Swift.Optional<Swift.Int>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "controlStyle",
+              "type": "AppIntents.IntentParameter<Swift.Int>.IntControlStyle",
+              "valueKind": "Runtime"
+            },
+            {
+              "label": "inclusiveRange",
+              "type": "Swift.Optional<(lowerBound: Swift.Int, upperBound: Swift.Int)>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            }
+          ]
+        },
+        "propertyWrappers": [
+          {
+            "type": "AppIntents.IntentParameter",
+            "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+            "line": 49,
+            "arguments": [
+              {
+                "label": "title",
+                "type": "Foundation.LocalizedStringResource",
+                "valueKind": "RawLiteral",
+                "value": "Brightness (nits)"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "$nits",
+        "type": "AppIntents.IntentParameter<Swift.Int>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 50,
+        "valueKind": "Runtime"
+      },
+      {
+        "label": "displayName",
+        "type": "Swift.Optional<Swift.String>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 53,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.Optional<Swift.String>>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Display Name"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "default",
+              "type": "Swift.Optional<Swift.String>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputOptions",
+              "type": "Swift.Optional<Swift.String.IntentInputOptions>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            }
+          ]
+        },
+        "propertyWrappers": [
+          {
+            "type": "AppIntents.IntentParameter",
+            "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+            "line": 52,
+            "arguments": [
+              {
+                "label": "title",
+                "type": "Foundation.LocalizedStringResource",
+                "valueKind": "RawLiteral",
+                "value": "Display Name"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "$displayName",
+        "type": "AppIntents.IntentParameter<Swift.Optional<Swift.String>>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 53,
+        "valueKind": "Runtime"
+      }
+    ]
+  },
+  {
+    "typeName": "XDR.GetBrightnessIntent",
+    "mangledTypeName": "3XDR19GetBrightnessIntentV",
+    "kind": "struct",
+    "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+    "line": 84,
+    "conformances": [
+      "AppIntents.AppIntent",
+      "AppIntents.PersistentlyIdentifiable",
+      "AppIntents._SupportsAppDependencies",
+      "Swift.Sendable",
+      "Swift.SendableMetatype",
+      "Swift.BitwiseCopyable"
+    ],
+    "allConformances": [
+      {
+        "protocolName": "AppIntents.AppIntent",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents.PersistentlyIdentifiable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents._SupportsAppDependencies",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.Sendable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.SendableMetatype",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.BitwiseCopyable",
+        "conformanceDefiningModule": "XDR"
+      }
+    ],
+    "associatedTypeAliases": [
+      {
+        "typeAliasName": "PerformResult",
+        "substitutedTypeName": "some AppIntents.ReturnsValue<Swift.Int>",
+        "substitutedMangledTypeName": "3XDR19GetBrightnessIntentV7performQryYaKFQOy_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ReturnsValue"
+        ],
+        "opaqueTypeSameTypeRequirements": [
+          {
+            "typeAliasName": "AppIntents.IntentResult.Value",
+            "substitutedTypeName": "Swift.Int",
+            "substitutedMangledTypeName": "Si"
+          }
+        ]
+      },
+      {
+        "typeAliasName": "SummaryContent",
+        "substitutedTypeName": "some AppIntents.ParameterSummary",
+        "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy3XDR013GetBrightnessC0V_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ParameterSummary"
+        ],
+        "opaqueTypeSameTypeRequirements": []
+      }
+    ],
+    "properties": [
+      {
+        "label": "title",
+        "type": "Foundation.LocalizedStringResource",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 85,
+        "valueKind": "RawLiteral",
+        "value": "Get Display Brightness"
+      },
+      {
+        "label": "description",
+        "type": "AppIntents.IntentDescription",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 86,
+        "valueKind": "RawLiteral",
+        "value": "Returns the current display brightness in nits"
+      }
+    ]
+  },
+  {
+    "typeName": "XDR.PresetNameProvider",
+    "mangledTypeName": "3XDR18PresetNameProviderV",
+    "kind": "struct",
+    "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+    "line": 103,
+    "conformances": [
+      "AppIntents.DynamicOptionsProvider",
+      "AppIntents._SupportsAppDependencies",
+      "Swift.Sendable",
+      "Swift.BitwiseCopyable"
+    ],
+    "allConformances": [
+      {
+        "protocolName": "AppIntents.DynamicOptionsProvider",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents._SupportsAppDependencies",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.Sendable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.BitwiseCopyable",
+        "conformanceDefiningModule": "XDR"
+      }
+    ],
+    "associatedTypeAliases": [
+      {
+        "typeAliasName": "Result",
+        "substitutedTypeName": "Swift.Array<Swift.String>",
+        "substitutedMangledTypeName": "SaySSG"
+      },
+      {
+        "typeAliasName": "DefaultValue",
+        "substitutedTypeName": "Swift.String",
+        "substitutedMangledTypeName": "SS"
+      }
+    ],
+    "properties": []
+  },
+  {
+    "typeName": "XDR.ApplyPresetIntent",
+    "mangledTypeName": "3XDR17ApplyPresetIntentV",
+    "kind": "struct",
+    "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+    "line": 115,
+    "conformances": [
+      "AppIntents.AppIntent",
+      "AppIntents.PersistentlyIdentifiable",
+      "AppIntents._SupportsAppDependencies",
+      "Swift.Sendable",
+      "Swift.SendableMetatype"
+    ],
+    "allConformances": [
+      {
+        "protocolName": "AppIntents.AppIntent",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents.PersistentlyIdentifiable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents._SupportsAppDependencies",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.Sendable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.SendableMetatype",
+        "conformanceDefiningModule": "XDR"
+      }
+    ],
+    "associatedTypeAliases": [
+      {
+        "typeAliasName": "PerformResult",
+        "substitutedTypeName": "some AppIntents.IntentResult",
+        "substitutedMangledTypeName": "3XDR17ApplyPresetIntentV7performQryYaKFQOy_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.IntentResult"
+        ],
+        "opaqueTypeSameTypeRequirements": []
+      },
+      {
+        "typeAliasName": "SummaryContent",
+        "substitutedTypeName": "some AppIntents.ParameterSummary",
+        "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy3XDR011ApplyPresetC0V_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ParameterSummary"
+        ],
+        "opaqueTypeSameTypeRequirements": []
+      }
+    ],
+    "properties": [
+      {
+        "label": "_presetName",
+        "type": "AppIntents.IntentParameter<Swift.String>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 120,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.String>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Preset Name"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputOptions",
+              "type": "Swift.Optional<Swift.String.IntentInputOptions>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            },
+            {
+              "label": "optionsProvider",
+              "type": "XDR.PresetNameProvider",
+              "valueKind": "InitCall",
+              "value": {
+                "type": "XDR.PresetNameProvider",
+                "arguments": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "label": "title",
+        "type": "Foundation.LocalizedStringResource",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 116,
+        "valueKind": "RawLiteral",
+        "value": "Apply Brightness Preset"
+      },
+      {
+        "label": "description",
+        "type": "AppIntents.IntentDescription",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 117,
+        "valueKind": "RawLiteral",
+        "value": "Applies a named brightness preset"
+      },
+      {
+        "label": "presetName",
+        "type": "Swift.String",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 120,
+        "valueKind": "InitCall",
+        "value": {
+          "type": "AppIntents.IntentParameter<Swift.String>",
+          "arguments": [
+            {
+              "label": "title",
+              "type": "Foundation.LocalizedStringResource",
+              "valueKind": "RawLiteral",
+              "value": "Preset Name"
+            },
+            {
+              "label": "description",
+              "type": "Swift.Optional<Foundation.LocalizedStringResource>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputOptions",
+              "type": "Swift.Optional<Swift.String.IntentInputOptions>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "requestValueDialog",
+              "type": "Swift.Optional<AppIntents.IntentDialog>",
+              "valueKind": "NilLiteral"
+            },
+            {
+              "label": "inputConnectionBehavior",
+              "type": "AppIntents.InputConnectionBehavior",
+              "valueKind": "Runtime"
+            },
+            {
+              "label": "optionsProvider",
+              "type": "XDR.PresetNameProvider",
+              "valueKind": "InitCall",
+              "value": {
+                "type": "XDR.PresetNameProvider",
+                "arguments": []
+              }
+            }
+          ]
+        },
+        "propertyWrappers": [
+          {
+            "type": "AppIntents.IntentParameter",
+            "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+            "line": 119,
+            "arguments": [
+              {
+                "label": "title",
+                "type": "Foundation.LocalizedStringResource",
+                "valueKind": "RawLiteral",
+                "value": "Preset Name"
+              },
+              {
+                "label": "optionsProvider",
+                "type": "XDR.PresetNameProvider",
+                "valueKind": "InitCall",
+                "value": {
+                  "type": "XDR.PresetNameProvider",
+                  "arguments": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "$presetName",
+        "type": "AppIntents.IntentParameter<Swift.String>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "false",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 120,
+        "valueKind": "Runtime"
+      }
+    ]
+  },
+  {
+    "typeName": "XDR.GetDisplayInfoIntent",
+    "mangledTypeName": "3XDR20GetDisplayInfoIntentV",
+    "kind": "struct",
+    "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+    "line": 141,
+    "conformances": [
+      "AppIntents.AppIntent",
+      "AppIntents.PersistentlyIdentifiable",
+      "AppIntents._SupportsAppDependencies",
+      "Swift.Sendable",
+      "Swift.SendableMetatype",
+      "Swift.BitwiseCopyable"
+    ],
+    "allConformances": [
+      {
+        "protocolName": "AppIntents.AppIntent",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents.PersistentlyIdentifiable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "AppIntents._SupportsAppDependencies",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.Sendable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.SendableMetatype",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.BitwiseCopyable",
+        "conformanceDefiningModule": "XDR"
+      }
+    ],
+    "associatedTypeAliases": [
+      {
+        "typeAliasName": "PerformResult",
+        "substitutedTypeName": "some AppIntents.ReturnsValue<Swift.String>",
+        "substitutedMangledTypeName": "3XDR20GetDisplayInfoIntentV7performQryYaKFQOy_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ReturnsValue"
+        ],
+        "opaqueTypeSameTypeRequirements": [
+          {
+            "typeAliasName": "AppIntents.IntentResult.Value",
+            "substitutedTypeName": "Swift.String",
+            "substitutedMangledTypeName": "SS"
+          }
+        ]
+      },
+      {
+        "typeAliasName": "SummaryContent",
+        "substitutedTypeName": "some AppIntents.ParameterSummary",
+        "substitutedMangledTypeName": "10AppIntents0A6IntentPAAE16parameterSummaryQrvpZQOy3XDR014GetDisplayInfoC0V_Qo_",
+        "opaqueTypeProtocolRequirements": [
+          "AppIntents.ParameterSummary"
+        ],
+        "opaqueTypeSameTypeRequirements": []
+      }
+    ],
+    "properties": [
+      {
+        "label": "title",
+        "type": "Foundation.LocalizedStringResource",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 142,
+        "valueKind": "RawLiteral",
+        "value": "Get Display Info"
+      },
+      {
+        "label": "description",
+        "type": "AppIntents.IntentDescription",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "false",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 143,
+        "valueKind": "RawLiteral",
+        "value": "Returns information about the current display"
+      }
+    ]
+  },
+  {
+    "typeName": "XDR.XDRShortcutsProvider",
+    "mangledTypeName": "3XDR20XDRShortcutsProviderV",
+    "kind": "struct",
+    "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+    "line": 179,
+    "conformances": [
+      "AppIntents.AppShortcutsProvider",
+      "Swift.Sendable",
+      "Swift.SendableMetatype",
+      "Swift.BitwiseCopyable"
+    ],
+    "allConformances": [
+      {
+        "protocolName": "AppIntents.AppShortcutsProvider",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.Sendable",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.SendableMetatype",
+        "conformanceDefiningModule": "XDR"
+      },
+      {
+        "protocolName": "Swift.BitwiseCopyable",
+        "conformanceDefiningModule": "XDR"
+      }
+    ],
+    "associatedTypeAliases": [],
+    "properties": [
+      {
+        "label": "appShortcuts",
+        "type": "Swift.Array<AppIntents.AppShortcut>",
+        "mangledTypeName": "n/a - deprecated",
+        "isStatic": "true",
+        "isComputed": "true",
+        "file": "/Users/mk/Downloads/XDR/XDR/Services/AppIntentsProvider.swift",
+        "line": 180,
+        "valueKind": "Array",
+        "value": [
+          {
+            "valueKind": "InitCall",
+            "value": {
+              "type": "AppIntents.AppShortcut",
+              "arguments": [
+                {
+                  "label": "intent",
+                  "type": "XDR.ToggleXDRIntent",
+                  "valueKind": "InitCall",
+                  "value": {
+                    "type": "XDR.ToggleXDRIntent",
+                    "arguments": []
+                  }
+                },
+                {
+                  "label": "phrases",
+                  "type": "Swift.Array<AppIntents.AppShortcutPhrase<XDR.ToggleXDRIntent>>",
+                  "valueKind": "Array",
+                  "value": [
+                    {
+                      "valueKind": "InterpolatedStringLiteral",
+                      "value": {
+                        "segments": [
+                          {
+                            "valueKind": "RawLiteral",
+                            "value": "Toggle XDR in "
+                          },
+                          {
+                            "valueKind": "Enum",
+                            "value": {
+                              "name": "applicationName"
+                            }
+                          },
+                          {
+                            "valueKind": "RawLiteral",
+                            "value": ""
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "label": "shortTitle",
+                  "type": "Foundation.LocalizedStringResource",
+                  "valueKind": "RawLiteral",
+                  "value": "Toggle XDR"
+                },
+                {
+                  "label": "systemImageName",
+                  "type": "Swift.String",
+                  "valueKind": "RawLiteral",
+                  "value": "sun.max.fill"
+                }
+              ]
+            }
+          },
+          {
+            "valueKind": "InitCall",
+            "value": {
+              "type": "AppIntents.AppShortcut",
+              "arguments": [
+                {
+                  "label": "intent",
+                  "type": "XDR.SetBrightnessIntent",
+                  "valueKind": "InitCall",
+                  "value": {
+                    "type": "XDR.SetBrightnessIntent",
+                    "arguments": []
+                  }
+                },
+                {
+                  "label": "phrases",
+                  "type": "Swift.Array<AppIntents.AppShortcutPhrase<XDR.SetBrightnessIntent>>",
+                  "valueKind": "Array",
+                  "value": [
+                    {
+                      "valueKind": "InterpolatedStringLiteral",
+                      "value": {
+                        "segments": [
+                          {
+                            "valueKind": "RawLiteral",
+                            "value": "Set brightness with "
+                          },
+                          {
+                            "valueKind": "Enum",
+                            "value": {
+                              "name": "applicationName"
+                            }
+                          },
+                          {
+                            "valueKind": "RawLiteral",
+                            "value": ""
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "label": "shortTitle",
+                  "type": "Foundation.LocalizedStringResource",
+                  "valueKind": "RawLiteral",
+                  "value": "Set Brightness"
+                },
+                {
+                  "label": "systemImageName",
+                  "type": "Swift.String",
+                  "valueKind": "RawLiteral",
+                  "value": "slider.horizontal.3"
+                }
+              ]
+            }
+          },
+          {
+            "valueKind": "InitCall",
+            "value": {
+              "type": "AppIntents.AppShortcut",
+              "arguments": [
+                {
+                  "label": "intent",
+                  "type": "XDR.GetDisplayInfoIntent",
+                  "valueKind": "InitCall",
+                  "value": {
+                    "type": "XDR.GetDisplayInfoIntent",
+                    "arguments": []
+                  }
+                },
+                {
+                  "label": "phrases",
+                  "type": "Swift.Array<AppIntents.AppShortcutPhrase<XDR.GetDisplayInfoIntent>>",
+                  "valueKind": "Array",
+                  "value": [
+                    {
+                      "valueKind": "InterpolatedStringLiteral",
+                      "value": {
+                        "segments": [
+                          {
+                            "valueKind": "RawLiteral",
+                            "value": "Get display info from "
+                          },
+                          {
+                            "valueKind": "Enum",
+                            "value": {
+                              "name": "applicationName"
+                            }
+                          },
+                          {
+                            "valueKind": "RawLiteral",
+                            "value": ""
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "label": "shortTitle",
+                  "type": "Foundation.LocalizedStringResource",
+                  "valueKind": "RawLiteral",
+                  "value": "Display Info"
+                },
+                {
+                  "label": "systemImageName",
+                  "type": "Swift.String",
+                  "valueKind": "RawLiteral",
+                  "value": "display"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

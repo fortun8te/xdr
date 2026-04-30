@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>logFormatVersion</key>
+	<integer>12</integer>
+	<key>logs</key>
+	<dict>
+		<key>769045F1-EEAA-42E1-9A88-77C91A146843</key>
+		<dict>
+			<key>className</key>
+			<string>IDECommandLineBuildLog</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>769045F1-EEAA-42E1-9A88-77C91A146843.xcactivitylog</string>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>XDR project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>XDR</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Cleaning project XDR with scheme XDR and configuration Release</string>
+			<key>timeStartedRecording</key>
+			<real>799189141.82384598</real>
+			<key>timeStoppedRecording</key>
+			<real>799189142.17052305</real>
+			<key>title</key>
+			<string>Cleaning project XDR with scheme XDR and configuration Release</string>
+			<key>uniqueIdentifier</key>
+			<string>769045F1-EEAA-42E1-9A88-77C91A146843</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="XDR Terminology">
+    <suite name="XDR Suite" code="XDRS" description="XDR display brightness control">
+
+        <command name="toggle xdr" code="XDRSTogX" description="Toggle XDR brightness on/off">
+            <cocoa class="ToggleXDRCommand"/>
+            <result type="boolean" description="true if XDR is now active, false if off"/>
+        </command>
+
+        <command name="set brightness" code="XDRSSetB" description="Set brightness in nits (0–1600)">
+            <cocoa class="SetBrightnessCommand"/>
+            <direct-parameter type="integer" description="Brightness in nits (0–500 for SDR, 501–1600 for XDR)"/>
+        </command>
+
+        <command name="get brightness" code="XDRSGetB" description="Get current brightness in nits">
+            <cocoa class="GetBrightnessCommand"/>
+            <result type="integer" description="Current brightness in nits"/>
+        </command>
+
+    </suite>
+</dictionary>

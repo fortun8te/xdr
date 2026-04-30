@@ -1,0 +1,16 @@
+{
+  "" : {
+    "const-values" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin-primary.swiftconstvalues",
+    "dependencies" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin-primary.d",
+    "diagnostics" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin-primary.dia",
+    "emit-module-dependencies" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin-primary-emit-module.dia",
+    "pch" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin-primary.swiftdeps"
+  },
+  "/Users/mk/Downloads/XDR/build/SourcePackages/checkouts/LaunchAtLogin-Modern/Sources/LaunchAtLogin/LaunchAtLogin.swift" : {
+    "index-unit-output-path" : "/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin.o",
+    "llvm-bc" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin.bc",
+    "object" : "/Users/mk/Downloads/XDR/build/Build/Intermediates.noindex/LaunchAtLogin.build/Release/LaunchAtLogin.build/Objects-normal/arm64/LaunchAtLogin.o"
+  }
+}

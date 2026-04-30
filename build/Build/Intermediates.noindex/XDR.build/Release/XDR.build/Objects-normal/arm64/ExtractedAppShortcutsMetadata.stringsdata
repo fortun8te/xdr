@@ -1,0 +1,77 @@
+{
+  "version" : 2,
+  "source" : "\/Users\/mk\/Downloads\/XDR\/XDR\/Services\/AppIntentsProvider.swift",
+  "tables" : {
+    "AppShortcuts" : [
+      {
+        "values" : [
+          "Toggle XDR in ${applicationName}"
+        ],
+        "location" : {
+          "startingColumn" : 0,
+          "startingLine" : 180
+        },
+        "key" : "Toggle XDR in ${applicationName}",
+        "appShortcutMetadata" : [
+          {
+            "parameterTypes" : {
+
+            },
+            "parameterDisplayRepresentations" : {
+
+            },
+            "actionIdentifier" : "ToggleXDRIntent",
+            "title" : "Toggle XDR Brightness",
+            "index" : 0
+          }
+        ]
+      },
+      {
+        "values" : [
+          "Set brightness with ${applicationName}"
+        ],
+        "location" : {
+          "startingColumn" : 0,
+          "startingLine" : 180
+        },
+        "key" : "Set brightness with ${applicationName}",
+        "appShortcutMetadata" : [
+          {
+            "actionIdentifier" : "SetBrightnessIntent",
+            "parameterTypes" : {
+
+            },
+            "index" : 1,
+            "parameterDisplayRepresentations" : {
+
+            },
+            "title" : "Set Display Brightness"
+          }
+        ]
+      },
+      {
+        "values" : [
+          "Get display info from ${applicationName}"
+        ],
+        "location" : {
+          "startingColumn" : 0,
+          "startingLine" : 180
+        },
+        "key" : "Get display info from ${applicationName}",
+        "appShortcutMetadata" : [
+          {
+            "actionIdentifier" : "GetDisplayInfoIntent",
+            "index" : 2,
+            "parameterTypes" : {
+
+            },
+            "parameterDisplayRepresentations" : {
+
+            },
+            "title" : "Get Display Info"
+          }
+        ]
+      }
+    ]
+  }
+}
