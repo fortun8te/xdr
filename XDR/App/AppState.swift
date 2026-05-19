@@ -10,10 +10,16 @@ final class AppState {
 
     var displays: [DisplayInfo] = []
 
+    // MARK: - Init
+
+    init() {
+        UserDefaults.standard.register(defaults: ["smoothTransitions": true])
+    }
+
     // MARK: - Settings (persisted via UserDefaults)
 
     var smoothTransitions: Bool {
-        get { UserDefaults.standard.object(forKey: "smoothTransitions") as? Bool ?? true }
+        get { UserDefaults.standard.bool(forKey: "smoothTransitions") }
         set { UserDefaults.standard.set(newValue, forKey: "smoothTransitions") }
     }
 

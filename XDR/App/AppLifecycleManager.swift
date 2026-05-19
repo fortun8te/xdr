@@ -19,8 +19,16 @@ final class AppLifecycleManager {
 
     /// Smooth transition duration in seconds.
     private let transitionDuration = XDRConstants.brightnessTransitionDuration
-    private let transitionSteps = 20
+
+    // MARK: - Animation State
+
+    /// One task per display drives the 60fps brightness ramp.
     private var animationTasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
+
+    // MARK: - Keyboard Shortcut Tasks
+
+    /// One cancellable task per shortcut name prevents rapid-press task stacking.
+    private var shortcutTasks: [String: Task<Void, Never>] = [:]
 
     // MARK: - Battery Auto-Disable State
 
@@ -41,13 +49,18 @@ final class AppLifecycleManager {
     private static let thermalReminderInterval: TimeInterval = 30 * 60 // 30 minutes
 
     init() {
-        // Wire sleep/wake restoration to XDR controller
+        // Wire sleep/wake restoration to XDR controller.
+        // Capture xdrController directly (strong) — no retain cycle because
+        // SleepWakeManager is owned by AppLifecycleManager which also owns
+        // xdrController.  Using [weak self] here would fail to compile because
+        // self is not yet fully initialised when SleepWakeManager is created.
+        let controller = xdrController
         sleepWakeManager = SleepWakeManager(
-            onRestore: { [weak xdrController] displayID, brightness in
-                xdrController?.setBrightness(brightness, for: displayID)
+            onRestore: { displayID, brightness in
+                controller.setBrightness(brightness, for: displayID)
             },
-            onRefresh: { [weak xdrController] in
-                xdrController?.refreshOverlays()
+            onRefresh: {
+                controller.refreshOverlays()
             }
         )
 
@@ -65,17 +78,20 @@ final class AppLifecycleManager {
 
     private func setupKeyboardShortcuts() {
         KeyboardShortcuts.onKeyUp(for: .toggleXDR) { [weak self] in
-            Task { @MainActor in
+            self?.shortcutTasks["toggleXDR"]?.cancel()
+            self?.shortcutTasks["toggleXDR"] = Task { @MainActor in
                 self?.toggleXDRForActiveDisplay()
             }
         }
         KeyboardShortcuts.onKeyUp(for: .increaseBrightness) { [weak self] in
-            Task { @MainActor in
+            self?.shortcutTasks["increaseBrightness"]?.cancel()
+            self?.shortcutTasks["increaseBrightness"] = Task { @MainActor in
                 self?.adjustBrightness(by: 0.05)
             }
         }
         KeyboardShortcuts.onKeyUp(for: .decreaseBrightness) { [weak self] in
-            Task { @MainActor in
+            self?.shortcutTasks["decreaseBrightness"]?.cancel()
+            self?.shortcutTasks["decreaseBrightness"] = Task { @MainActor in
                 self?.adjustBrightness(by: -0.05)
             }
         }
@@ -111,7 +127,12 @@ final class AppLifecycleManager {
                 let freshDisplays = self.displayManager.displays
                 appState.displays = freshDisplays.map { fresh in
                     var display = fresh
-                    if let existing = appState.displays.first(where: { $0.id == fresh.id }) {
+                    if reconnected.contains(fresh.id) {
+                        // Reconnected display: brightness was just restored via
+                        // setBrightness above; read the authoritative value from
+                        // xdrController rather than stale AppState data.
+                        display.brightness = self.xdrController.getBrightness(for: fresh.id)
+                    } else if let existing = appState.displays.first(where: { $0.id == fresh.id }) {
                         display.brightness = existing.brightness
                     }
                     return display
@@ -215,40 +236,72 @@ final class AppLifecycleManager {
     /// Called from XDRApp on applicationWillTerminate to ensure gamma tables
     /// are reset to identity before the process exits.
     func shutdown() {
-        for (_, task) in animationTasks {
-            task.cancel()
-        }
-        animationTasks.removeAll()
+        cancelAllRamps()
         batteryTask?.cancel()
         thermalTask?.cancel()
+        for (_, task) in shortcutTasks { task.cancel() }
+        shortcutTasks.removeAll()
         sleepWakeManager.shutdown()
         xdrController.shutdown()
+    }
+
+    private func cancelAllRamps() {
+        for (_, task) in animationTasks { task.cancel() }
+        animationTasks.removeAll()
     }
 
     // MARK: - Smooth Transition
 
     private func animateBrightness(from start: Double, to end: Double, for displayID: CGDirectDisplayID) {
-        // Skip animation when smooth transitions are disabled
-        if appState?.smoothTransitions == false {
+        // Fix 4: Respect smoothTransitions flag.
+        guard appState?.smoothTransitions != false else {
             setBrightness(end, for: displayID)
             return
         }
 
-        animationTasks[displayID]?.cancel()
+        // Fix 5: Skip the ramp for imperceptibly small changes.
+        guard abs(end - start) >= 0.01 else {
+            setBrightness(end, for: displayID)
+            return
+        }
 
-        let steps = transitionSteps
-        let stepDuration = transitionDuration / Double(steps)
-        let delta = (end - start) / Double(steps)
+        // Fix 3: If a ramp is already in flight for this display, sample the
+        // CURRENT brightness before canceling so we never regress.
+        let actualStart: Double
+        if animationTasks[displayID] != nil {
+            actualStart = xdrController.getBrightness(for: displayID)
+            animationTasks[displayID]?.cancel()
+        } else {
+            actualStart = start
+        }
+
+        // Fix 1 (fallback): CADisplayLink is API_UNAVAILABLE on macOS.
+        // Drive the ramp with a Task that sleeps ~1/60 s per tick so we
+        // achieve ~60fps eased updates without any extra dependencies.
+        let frameDuration: UInt64 = 16_666_667 // nanoseconds (~60fps)
+        let totalDuration = transitionDuration
+        let rampStart = actualStart
+        let rampEnd = end
 
         animationTasks[displayID] = Task { @MainActor [weak self] in
-            for i in 1...steps {
-                let sleepNanoseconds = UInt64(stepDuration * 1_000_000_000)
-                try? await Task.sleep(nanoseconds: sleepNanoseconds)
+            let startTime = Date()
+            while true {
                 guard !Task.isCancelled else { return }
-                let value = (i == steps) ? end : start + delta * Double(i)
+                let elapsed = Date().timeIntervalSince(startTime)
+                let t = min(elapsed / totalDuration, 1.0)
+                // Fix 2: ease-in-out cubic.
+                let easedT = self?.easeInOutCubic(t) ?? t
+                let value = rampStart + (rampEnd - rampStart) * easedT
                 self?.setBrightness(value, for: displayID)
+                if t >= 1.0 { return }
+                try? await Task.sleep(nanoseconds: frameDuration)
             }
         }
+    }
+
+    // Fix 2: Cubic ease-in-out: 0->0, 0.5->0.5, 1->1.
+    private func easeInOutCubic(_ t: Double) -> Double {
+        t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
     }
 
     // MARK: - Battery Auto-Disable
@@ -259,6 +312,7 @@ final class AppLifecycleManager {
         batteryTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
+                if Task.isCancelled { return }
                 self?.checkBatteryState()
             }
         }
@@ -309,6 +363,7 @@ final class AppLifecycleManager {
         thermalTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(60)) // Check every minute
+                if Task.isCancelled { return }
                 self?.checkThermalState()
             }
         }
@@ -339,7 +394,7 @@ final class AppLifecycleManager {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
     }
 
-    private nonisolated func sendNotification(title: String, body: String) {
+    private func sendNotification(title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
