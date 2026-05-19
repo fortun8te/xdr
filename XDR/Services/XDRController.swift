@@ -584,18 +584,35 @@ final class XDRController {
     /// app-focus or Space transition), re-orders the trigger window to the front so it
     /// re-asserts headroom before the user notices a brightness dip.
     /// On the M5 fallback path (overlay present), also re-orders the overlay window.
+    /// When headroom drops, clears the gamma factor cache so the table is reapplied
+    /// when headroom recovers (prevents the gamma from being lost during transitions).
     private func startHeadroomMonitor(for displayID: CGDirectDisplayID) {
         headroomMonitorTasks[displayID]?.cancel()
+        var wasLowHeadroom = false
         let task = Task { @MainActor [weak self] in
             while true {
                 guard let self, !Task.isCancelled else { return }
                 if self.xdrActive[displayID] == true,
-                   let screen = self.screen(for: displayID),
-                   screen.maximumExtendedDynamicRangeColorComponentValue < 1.05 {
-                    self.logger.debug("EDR headroom dipped for \(displayID) — re-asserting trigger")
-                    self.triggers[displayID]?.window.orderFrontRegardless()
-                    // Only re-order overlay if it exists (M5 fallback).
-                    self.boostOverlays[displayID]?.window.orderFrontRegardless()
+                   let screen = self.screen(for: displayID) {
+                    let currentHeadroom = screen.maximumExtendedDynamicRangeColorComponentValue
+                    if currentHeadroom < 1.05 {
+                        if !wasLowHeadroom {
+                            wasLowHeadroom = true
+                            self.logger.debug("EDR headroom dipped for \(displayID) — re-asserting trigger")
+                            // Clear the gamma factor cache so when headroom returns,
+                            // we force a re-write instead of skipping due to cached factor.
+                            self.lastGammaFactor.removeValue(forKey: displayID)
+                        }
+                        self.triggers[displayID]?.window.orderFrontRegardless()
+                        // Only re-order overlay if it exists (M5 fallback).
+                        self.boostOverlays[displayID]?.window.orderFrontRegardless()
+                    } else if wasLowHeadroom {
+                        // Headroom recovered — force re-application of gamma/overlay.
+                        wasLowHeadroom = false
+                        if let stored = self.brightness[displayID], stored > 1.0 {
+                            self.applyGammaScale(for: displayID, brightness: Float(stored))
+                        }
+                    }
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
