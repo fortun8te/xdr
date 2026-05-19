@@ -13,14 +13,18 @@ final class BatteryMonitor {
 
     // MARK: - Private
 
-    /// Safe because this @MainActor class only reads/writes the source on the
-    /// main thread. `nonisolated(unsafe)` silences the concurrency checker in
-    /// `deinit`, which the compiler treats as nonisolated.
-    nonisolated(unsafe) private var runLoopSource: CFRunLoopSource?
+    /// Storage for the IOKit power-source notification run-loop source. Excluded
+    /// from `@Observable` tracking so `deinit` (which is nonisolated) can read
+    /// it to remove the source from the main run loop. Writes only happen on the
+    /// main actor via `startMonitoring`, so there is no actual data race.
+    @ObservationIgnored
+    private var runLoopSource: CFRunLoopSource?
 
     /// Guards against the run loop source callback firing during deallocation.
-    /// Marked `nonisolated(unsafe)` so `deinit` (which is nonisolated) can write it.
-    nonisolated(unsafe) private var isShuttingDown = false
+    /// Excluded from observation so both the C callback (off-actor) and `deinit`
+    /// can access it without tripping the observation machinery.
+    @ObservationIgnored
+    private var isShuttingDown = false
 
     // MARK: - Init / Deinit
 
@@ -50,8 +54,17 @@ final class BatteryMonitor {
 
     private func updateBatteryState() {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [Any],
-              let source = sources.first,
+              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [Any]
+        else { return }
+
+        // Filter to the internal battery so a UPS does not shadow the real battery level.
+        let internalSource = sources.first { src in
+            guard let desc = IOPSGetPowerSourceDescription(snapshot, src as CFTypeRef)?
+                    .takeUnretainedValue() as? [String: Any] else { return false }
+            return (desc[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType
+        } ?? sources.first  // fall back to first source on desktops without a battery
+
+        guard let source = internalSource,
               let desc = IOPSGetPowerSourceDescription(snapshot, source as CFTypeRef)?
                   .takeUnretainedValue() as? [String: Any]
         else { return }

@@ -64,19 +64,15 @@ struct SetBrightnessIntent: AppIntent {
         let controller = lifecycle.xdrController
         let manager = lifecycle.displayManager
 
-        let displayID: CGDirectDisplayID
+        let matchedDisplay: DisplayInfo?
         if let name = displayName {
-            if let match = manager.displays.first(where: { $0.name.localizedCaseInsensitiveContains(name) }) {
-                displayID = match.id
-            } else {
-                displayID = CGMainDisplayID()
-            }
+            matchedDisplay = manager.displays.first(where: { $0.name.localizedCaseInsensitiveContains(name) })
         } else {
-            displayID = CGMainDisplayID()
+            matchedDisplay = manager.displays.first(where: { $0.id == CGMainDisplayID() })
         }
-
-        let displayIsXDR = manager.displays.first(where: { $0.id == displayID })?.isXDR ?? false
-        let maxNits = manager.displays.first(where: { $0.id == displayID })?.maxNits ?? (displayIsXDR ? 1600 : 500)
+        let displayID = matchedDisplay?.id ?? CGMainDisplayID()
+        let displayIsXDR = matchedDisplay?.isXDR ?? false
+        let maxNits = matchedDisplay?.maxNits ?? (displayIsXDR ? 1600 : 500)
         let clampedNits = max(0, min(nits, maxNits))
         let brightness = controller.brightnessFromNits(Double(clampedNits))
 

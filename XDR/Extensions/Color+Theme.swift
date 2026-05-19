@@ -7,12 +7,5 @@ extension Color {
 
     // Gradient for XDR range on slider
     static let xdrGradientEnd = Color(red: 0.99, green: 0.90, blue: 0.54)   // #FDE68A
-
-    // Blue accent (matches app icon gradient)
-    static let appBlue = Color(red: 0x16/255, green: 0x31/255, blue: 0xFF/255)       // #1631FF
-    static let appBlueLight = Color(red: 0x5A/255, green: 0x6E/255, blue: 0xFF/255)  // lighter end
-
-    // Menu bar badge
-    static let xdrBadge = Color.xdrAmber
 }
 

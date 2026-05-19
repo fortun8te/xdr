@@ -14,6 +14,8 @@ struct BrightnessPreset: Identifiable, Codable, Hashable {
         "\(name) (\(nits()) nits)"
     }
 
+    // IDs are compile-time constants persisted to UserDefaults — failure here
+    // would be a compile-time misspelling, not a runtime condition.
     static let defaults: [BrightnessPreset] = [
         BrightnessPreset(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, name: "Normal", brightness: 1.0, icon: "sun.max"),
         BrightnessPreset(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, name: "Extra", brightness: 1.3, icon: "sun.max.fill"),

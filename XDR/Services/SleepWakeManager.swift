@@ -134,7 +134,8 @@ final class SleepWakeManager {
 
     @objc private func screenDidUnlock(_ note: Notification) {
         logger.info("Screen unlocked — scheduling delayed restore")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.0))
             self?.restoreAllDisplays(pass: 0)
         }
     }
@@ -154,7 +155,9 @@ final class SleepWakeManager {
             self?.restoreAllDisplays(pass: 1)
         }
 
-        // Pass 2: 3.0s — catches slow-initializing displays (Thunderbolt, USB-C hubs)
+        // Pass 2: 3.0s — catches slow-initializing displays (Thunderbolt, USB-C hubs).
+        // Skip onRefresh() here (pass != 0) to avoid a second Metal teardown that causes
+        // a visible brightness dip ~3s after wake.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             self?.restoreAllDisplays(pass: 2)
             self?.isWakeRestoreScheduled = false
@@ -167,7 +170,7 @@ final class SleepWakeManager {
             for tick in 0..<3 {
                 try? await Task.sleep(for: .seconds(5))
                 guard !Task.isCancelled, let self else { return }
-                self.logger.info("Watchdog tick \(tick + 1)/6 — refreshing overlays")
+                self.logger.info("Watchdog tick \(tick + 1)/3 — refreshing overlays")
                 self.onRefresh()
                 // Re-apply brightness so XDR state is rebuilt after refresh teardown
                 for (displayID, brightness) in self.savedBrightness {
@@ -183,9 +186,14 @@ final class SleepWakeManager {
     private func restoreAllDisplays(pass: Int) {
         isRestoring = true
 
-        // Tear down and recreate overlays to ensure fresh Metal state after sleep/wake
-        logger.info("Restore pass \(pass) — refreshing overlays before restoration")
-        onRefresh()
+        // Tear down and recreate overlays to ensure fresh Metal state after sleep/wake.
+        // Skip on pass 2 — a second teardown at 3s causes a visible brightness dip.
+        if pass != 2 {
+            logger.info("Restore pass \(pass) — refreshing overlays before restoration")
+            onRefresh()
+        } else {
+            logger.info("Restore pass \(pass) — skipping overlay refresh to prevent brightness dip")
+        }
 
         let clamshellClosed = isClamshellClosed()
 
