@@ -324,19 +324,13 @@ final class XDRController {
         }
         workspaceObserverTokens.append(spaceToken)
 
-        // Bug 1 + Bug 2 fix: When ANY app's occlusion state changes (foreground/background
-        // switch) the compositor may momentarily collapse EDR headroom. Re-ordering the
-        // windows here keeps them front-most and triggers headroom re-assertion.
-        let occlusionToken = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeOcclusionStateNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleSpaceChange()
-            }
-        }
-        observerTokens.append(occlusionToken)
+        // NOTE: didChangeOcclusionStateNotification was previously wired here to call
+        // handleSpaceChange(), but that notification fires for EVERY app focus change
+        // (not just Space switches), producing constant orderFrontRegardless() calls
+        // that were causing unnecessary compositor interactions. The headroom monitor
+        // (polling at 250 ms with a 2-strike debounce) handles transient headroom dips,
+        // and activeSpaceDidChangeNotification already covers true Space switches.
+        // Removed to eliminate a source of spurious gamma/window operations.
     }
 
     @MainActor
@@ -579,15 +573,30 @@ final class XDRController {
 
     // MARK: - Headroom Monitor
 
-    /// Polls EDR headroom at 100 ms intervals while XDR is active.
-    /// If headroom unexpectedly drops below 1.05 (compositor collapsed it during an
-    /// app-focus or Space transition), re-orders the trigger window to the front so it
-    /// re-asserts headroom before the user notices a brightness dip.
-    /// On the M5 fallback path (overlay present), also re-orders the overlay window.
-    /// When headroom drops, clears the gamma factor cache so the table is reapplied
-    /// when headroom recovers (prevents the gamma from being lost during transitions).
+    /// Polls EDR headroom at 250 ms intervals while XDR is active.
+    ///
+    /// Polling at 100 ms was too aggressive: Space transitions last ~250–500 ms, so
+    /// a 100 ms poll could sample mid-transition (headroom dipped), clear the gamma
+    /// cache, then on the very next tick (100 ms later) see headroom recovered and
+    /// force-reapply the gamma table — the write itself at that moment produced a
+    /// micro-flicker on M1–M4. 250 ms gives the transition time to settle before
+    /// we react.
+    ///
+    /// Threshold lowered from 1.05 to 1.02 to avoid false positives on M1 Max
+    /// Liquid Retina XDR (potentialEDR ≈ 1.6): during a Space transition the
+    /// compositor can briefly report headroom of 1.03–1.04 which is not a real
+    /// collapse — it's just the animation layer temporarily capping allocation.
+    ///
+    /// On the gamma-table path (M1–M4) we ONLY reorder the 1×1 trigger window;
+    /// we do NOT clear the gamma cache or force-reapply on headroom dip, because
+    /// the gamma table is not invalidated by a Space transition — it persists in
+    /// the display pipeline. Clearing the cache + force-rewriting was the primary
+    /// cause of the on/off/on flicker the user observed.
+    ///
+    /// On the overlay path (M5) we do reorder the overlay so it stays front-most.
     private func startHeadroomMonitor(for displayID: CGDirectDisplayID) {
         headroomMonitorTasks[displayID]?.cancel()
+        var lowHeadroomStrikes = 0          // require 2 consecutive readings before acting
         var wasLowHeadroom = false
         let task = Task { @MainActor [weak self] in
             while true {
@@ -595,26 +604,41 @@ final class XDRController {
                 if self.xdrActive[displayID] == true,
                    let screen = self.screen(for: displayID) {
                     let currentHeadroom = screen.maximumExtendedDynamicRangeColorComponentValue
-                    if currentHeadroom < 1.05 {
-                        if !wasLowHeadroom {
+                    // Use 1.02 threshold: anything above is considered "headroom present".
+                    // Require 2 consecutive sub-threshold readings to avoid reacting to
+                    // a single sample taken mid-Space-transition animation.
+                    if currentHeadroom < 1.02 {
+                        lowHeadroomStrikes += 1
+                        if lowHeadroomStrikes >= 2 && !wasLowHeadroom {
                             wasLowHeadroom = true
-                            self.logger.debug("EDR headroom dipped for \(displayID) — re-asserting trigger")
-                            // Clear the gamma factor cache so when headroom returns,
-                            // we force a re-write instead of skipping due to cached factor.
-                            self.lastGammaFactor.removeValue(forKey: displayID)
+                            self.logger.debug("EDR headroom collapsed for \(displayID) — re-asserting trigger")
+                            // Only reorder windows; do NOT clear gamma cache.
+                            // The gamma table survives Space transitions intact on M1–M4.
+                            // Clearing the cache here caused a forced re-write on recovery
+                            // which was visible as a flicker.
                         }
                         self.triggers[displayID]?.window.orderFrontRegardless()
                         // Only re-order overlay if it exists (M5 fallback).
                         self.boostOverlays[displayID]?.window.orderFrontRegardless()
-                    } else if wasLowHeadroom {
-                        // Headroom recovered — force re-application of gamma/overlay.
-                        wasLowHeadroom = false
-                        if let stored = self.brightness[displayID], stored > 1.0 {
-                            self.applyGammaScale(for: displayID, brightness: Float(stored))
+                    } else {
+                        lowHeadroomStrikes = 0
+                        if wasLowHeadroom {
+                            // Headroom recovered after a confirmed collapse.
+                            // On M5 overlay path, reorder to ensure overlay is front-most.
+                            // On M1–M4 gamma path, the table is still in effect — no re-write needed.
+                            wasLowHeadroom = false
+                            if self.boostOverlays[displayID] != nil {
+                                // M5 overlay path: force-reapply overlay factor.
+                                if let stored = self.brightness[displayID], stored > 1.0 {
+                                    self.applyGammaScale(for: displayID, brightness: Float(stored))
+                                }
+                            }
+                            // M1–M4 gamma path: intentionally no action.
+                            // The gamma table is already applied and was never lost.
                         }
                     }
                 }
-                try? await Task.sleep(for: .milliseconds(100))
+                try? await Task.sleep(for: .milliseconds(250))
             }
         }
         headroomMonitorTasks[displayID] = task

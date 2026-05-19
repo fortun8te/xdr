@@ -22,7 +22,6 @@
 //            than an instant jump, so it feels intentional not a hard cut.
 
 import SwiftUI
-import Combine
 
 // MARK: - Public view
 
@@ -43,7 +42,7 @@ struct XDRBoostMeter: View {
     @State private var targetBrightness: Double? = nil
     /// Smoothed value driving the visual thumb & fill.
     @State private var displayedBrightness: Double = 1.0
-    /// Counter so onSet fires at most every other TimelineView tick.
+    /// Counter so onSet fires at most every other TimelineView tick (~60 Hz effective).
     @State private var tickCount: Int = 0
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -62,9 +61,6 @@ struct XDRBoostMeter: View {
 
     // ── body ─────────────────────────────────────────────────────────────────
     var body: some View {
-        // Sync displayedBrightness when model updates externally (no active drag)
-        let _ = syncOnAppear(brightness)
-
         GeometryReader { geo in
             let width = geo.size.width
             let centerY = rowHeight / 2
@@ -73,7 +69,7 @@ struct XDRBoostMeter: View {
                                  CGFloat(fillFraction) * width))
 
             // TimelineView drives the 120 Hz ramp while a gesture is active.
-            TimelineView(.animation(minimumInterval: 1.0 / 120.0, paused: targetBrightness == nil)) { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 120.0, paused: targetBrightness == nil)) { context in
                 ZStack(alignment: .leading) {
                     // Background track
                     Capsule()
@@ -110,11 +106,11 @@ struct XDRBoostMeter: View {
                         )
                 }
                 .frame(width: width, height: rowHeight)
-                .onChange(of: targetBrightness) { _, _ in advanceRamp() }
+                // Drive the ramp on every TimelineView tick by observing the
+                // context date — this fires at ~120 Hz while targetBrightness
+                // is non-nil (paused: false), advancing the smoothed ramp each frame.
+                .onChange(of: context.date) { advanceRamp() }
             }
-            // TimelineView's onChange fires when its schedule ticks; we also
-            // call advanceRamp explicitly from the timer-like schedule update.
-            .onChange(of: tickCount) { advanceRamp() }
             .frame(width: width, height: rowHeight)
             .contentShape(Rectangle())
             .opacity(isXDR ? 1.0 : 0.4)
@@ -195,8 +191,4 @@ struct XDRBoostMeter: View {
         }
     }
 
-    // Tiny helper so `let _ = syncOnAppear(brightness)` can live in body
-    // without compiler complaints about unused results.
-    @discardableResult
-    private func syncOnAppear(_ value: Double) -> Bool { true }
 }
