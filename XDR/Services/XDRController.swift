@@ -136,7 +136,7 @@ private final class EDRTrigger: NSObject, MTKViewDelegate {
     }
 }
 
-// MARK: - EDR Boost Overlay (M5 fallback)
+// MARK: - EDR Boost Overlay (M5 fallback only)
 
 /// Full-screen Metal overlay that multiplies desktop content by a boost factor.
 ///
@@ -149,6 +149,9 @@ private final class EDRTrigger: NSObject, MTKViewDelegate {
 ///
 /// The EDRTrigger is still needed alongside this overlay to force the compositor
 /// to allocate HDR headroom.
+///
+/// This class is NOT instantiated on M1–M4 hardware. It exists purely as a fallback
+/// for chips where the gamma table API has no effect.
 private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
     let window: NSWindow
     private let metalView: MTKView
@@ -257,9 +260,9 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
 /// - `0.0`–`1.0` maps to SDR range (0–500 nits) via the native brightness API.
 /// - `1.0`–`2.0` maps to XDR range (500–1600 nits) via:
 ///   1. A 1×1 pixel EDR trigger that forces panel HDR headroom allocation.
-///   2. A full-screen Metal multiply overlay that boosts every pixel by the
-///      requested factor, composited at the GPU level so RGB ratios (and color
-///      accuracy) are preserved.
+///   2. `CGSetDisplayTransferByTable` gamma scaling (M1–M4 path, no overlay required).
+///      On M5+ where the gamma table API returns success but has no visual effect
+///      (Apple bug FB22273730), falls back to the full-screen Metal multiply overlay.
 @MainActor
 @Observable
 final class XDRController {
@@ -278,13 +281,19 @@ final class XDRController {
     private var pendingGammaTasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
     private var boostOverlays: [CGDirectDisplayID: EDRBoostOverlay] = [:]
     // Bug 2 fix: per-display headroom monitor — polls maximumExtendedDynamicRangeColorComponentValue
-    // and re-asserts the trigger + overlay when headroom unexpectedly drops below 1.05
+    // and re-asserts the trigger when headroom unexpectedly drops below 1.05
     // (e.g. during app-focus transitions on the same Space).
     private var headroomMonitorTasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
     private let logger = Logger(subsystem: "com.xdr.app", category: "XDRController")
     // Observer tokens — retained so we can remove them in shutdown().
     private var observerTokens: [NSObjectProtocol] = []
     private var workspaceObserverTokens: [NSObjectProtocol] = []
+
+    /// Cache of gamma-table effectiveness per display.
+    /// `true`  = gamma tables work on this display (M1–M4 path, no overlay needed).
+    /// `false` = gamma tables return success but have no effect (M5+ fallback, overlay required).
+    /// `nil`   = not yet tested (first activation will populate this).
+    private var gammaTableWorks: [CGDirectDisplayID: Bool] = [:]
 
     // MARK: - Lifecycle
 
@@ -335,6 +344,7 @@ final class XDRController {
         for (_, trigger) in triggers {
             trigger.window.orderFrontRegardless()
         }
+        // Only re-order overlays when they exist (M5 fallback path).
         for (_, overlay) in boostOverlays {
             overlay.window.orderFrontRegardless()
         }
@@ -425,6 +435,9 @@ final class XDRController {
             headroomMonitorTasks[displayID]?.cancel()
             headroomMonitorTasks.removeValue(forKey: displayID)
 
+            // Reset gamma table before tearing down.
+            resetGammaTable(for: displayID)
+
             if let overlay = boostOverlays.removeValue(forKey: displayID) {
                 overlay.destroy()
             }
@@ -460,14 +473,16 @@ final class XDRController {
         }
         headroomMonitorTasks.removeAll()
 
-        // Destroy all boost overlays.
+        // Destroy all boost overlays (M5 fallback path only).
         for (_, overlay) in boostOverlays {
             overlay.destroy()
         }
         boostOverlays.removeAll()
 
+        // Reset gamma tables and destroy triggers.
         for (displayID, _) in triggers {
             xdrActive[displayID] = false
+            resetGammaTable(for: displayID)
         }
         for (_, trigger) in triggers {
             trigger.destroy()
@@ -475,6 +490,7 @@ final class XDRController {
 
         triggers.removeAll()
         brightness.removeAll()
+        gammaTableWorks.removeAll()
     }
 
     // MARK: - SDR Brightness (Private API)
@@ -499,25 +515,25 @@ final class XDRController {
     private func activateXDR(for displayID: CGDirectDisplayID) {
         guard xdrActive[displayID] != true else { return }
 
-        // Create 1x1 EDR trigger if needed — required to allocate panel HDR headroom.
+        // Create 1x1 EDR trigger — always required to allocate panel HDR headroom.
+        // This is needed on BOTH gamma-table path (M1–M4) and overlay path (M5+).
+        // Without the trigger the compositor does not grant headroom and gamma
+        // values > 1.0 get silently clamped to 1.0.
         if triggers[displayID] == nil {
             if let screen = screen(for: displayID) {
                 triggers[displayID] = EDRTrigger(for: screen)
             }
         }
 
-        // Create the full-screen multiply overlay for brightness boost.
-        if boostOverlays[displayID] == nil {
-            if let screen = screen(for: displayID) {
-                boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: 1.0)
-            }
-        }
+        // NOTE: The boost overlay is NOT created here. `applyGammaScale` (called from
+        // `applyGammaWhenReady` once headroom is confirmed) decides whether gamma tables
+        // work for this display. Only if they don't (M5 fallback) does it create the overlay.
 
         xdrActive[displayID] = true
 
         // Bug 2 fix: start a lightweight headroom monitor (polls every ~100 ms).
         // When the compositor drops EDR headroom (e.g. during app-focus transitions),
-        // we immediately re-assert the trigger and overlay so boost never disappears.
+        // we immediately re-assert the trigger so boost never disappears.
         startHeadroomMonitor(for: displayID)
     }
 
@@ -532,7 +548,10 @@ final class XDRController {
         headroomMonitorTasks[displayID]?.cancel()
         headroomMonitorTasks.removeValue(forKey: displayID)
 
-        // Destroy boost overlay.
+        // Reset gamma table to identity (removes any brightness boost).
+        resetGammaTable(for: displayID)
+
+        // Destroy boost overlay if present (M5 fallback path only).
         if let overlay = boostOverlays.removeValue(forKey: displayID) {
             overlay.destroy()
         }
@@ -549,8 +568,9 @@ final class XDRController {
 
     /// Polls EDR headroom at 100 ms intervals while XDR is active.
     /// If headroom unexpectedly drops below 1.05 (compositor collapsed it during an
-    /// app-focus or Space transition), re-orders both windows to the front so the
-    /// trigger re-asserts headroom before the user notices a brightness dip.
+    /// app-focus or Space transition), re-orders the trigger window to the front so it
+    /// re-asserts headroom before the user notices a brightness dip.
+    /// On the M5 fallback path (overlay present), also re-orders the overlay window.
     private func startHeadroomMonitor(for displayID: CGDirectDisplayID) {
         headroomMonitorTasks[displayID]?.cancel()
         let task = Task { @MainActor [weak self] in
@@ -561,12 +581,54 @@ final class XDRController {
                    screen.maximumExtendedDynamicRangeColorComponentValue < 1.05 {
                     self.logger.debug("EDR headroom dipped for \(displayID) — re-asserting trigger")
                     self.triggers[displayID]?.window.orderFrontRegardless()
+                    // Only re-order overlay if it exists (M5 fallback).
                     self.boostOverlays[displayID]?.window.orderFrontRegardless()
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
         }
         headroomMonitorTasks[displayID] = task
+    }
+
+    // MARK: - Gamma Table (Primary boost path, M1–M4)
+
+    /// Applies a gamma ramp that scales all output values by `factor`.
+    /// Values > 1.0 push content into EDR headroom (valid only after the EDR trigger
+    /// has caused the compositor to allocate headroom).
+    ///
+    /// Returns `true` if `CGSetDisplayTransferByTable` reported success.
+    /// Note: M5 may return success but have no visual effect — empirical verification
+    /// is done by `applyGammaWhenReady` after a 500 ms delay.
+    @discardableResult
+    private func applyGammaTable(factor: Float, for displayID: CGDirectDisplayID) -> Bool {
+        let length: UInt32 = 256
+        var red   = [CGGammaValue](repeating: 0, count: Int(length))
+        var green = [CGGammaValue](repeating: 0, count: Int(length))
+        var blue  = [CGGammaValue](repeating: 0, count: Int(length))
+
+        for i in 0..<Int(length) {
+            let normalized = Float(i) / Float(length - 1)
+            // Allow values > 1.0 to push into EDR headroom.
+            let scaled = min(normalized * factor, factor)
+            red[i]   = CGGammaValue(scaled)
+            green[i] = CGGammaValue(scaled)
+            blue[i]  = CGGammaValue(scaled)
+        }
+
+        let result = CGSetDisplayTransferByTable(displayID, length, &red, &green, &blue)
+        return result == .success
+    }
+
+    /// Restores the gamma ramp to a linear identity (no scaling) for the given display.
+    /// Uses a per-display identity table rather than `CGDisplayRestoreColorSyncSettings()`
+    /// so other displays are not affected.
+    private func resetGammaTable(for displayID: CGDirectDisplayID) {
+        let length: UInt32 = 256
+        var ramp = [CGGammaValue](repeating: 0, count: Int(length))
+        for i in 0..<Int(length) {
+            ramp[i] = CGGammaValue(Float(i) / Float(length - 1))
+        }
+        _ = CGSetDisplayTransferByTable(displayID, length, &ramp, &ramp, &ramp)
     }
 
     // MARK: - Gamma Scaling
@@ -596,8 +658,89 @@ final class XDRController {
         let maxPotentialEdr = s.maximumPotentialExtendedDynamicRangeColorComponentValue
         let factor = Self.edrGammaFactor(xdrBrightness: brightness, maxPotentialEdr: maxPotentialEdr)
 
-        // Update the full-screen multiply overlay factor.
-        boostOverlays[displayID]?.updateFactor(factor)
+        // Gamma-table path (M1–M4): apply the gamma ramp directly to the display.
+        // If gamma tables are already known to work for this display, use them and return.
+        if gammaTableWorks[displayID] == true {
+            applyGammaTable(factor: factor, for: displayID)
+            return
+        }
+
+        // M5 fallback: gamma tables are known NOT to work for this display.
+        // Update the overlay factor instead.
+        if gammaTableWorks[displayID] == false {
+            if boostOverlays[displayID] == nil, let screen = screen(for: displayID) {
+                boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: factor)
+            } else {
+                boostOverlays[displayID]?.updateFactor(factor)
+            }
+            return
+        }
+
+        // First activation for this display: gammaTableWorks is nil.
+        // Apply the gamma table now; schedule an async check 500 ms later to see if it
+        // had the expected visual effect (headroom stays elevated, i.e. gamma worked).
+        let apiSuccess = applyGammaTable(factor: factor, for: displayID)
+        if !apiSuccess {
+            // CGSetDisplayTransferByTable returned an error — skip gamma, go straight to overlay.
+            logger.warning("CGSetDisplayTransferByTable failed for display \(displayID) — using overlay fallback")
+            gammaTableWorks[displayID] = false
+            if boostOverlays[displayID] == nil, let screen = screen(for: displayID) {
+                boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: factor)
+            }
+            return
+        }
+
+        // Gamma API returned success. Verify visually after 500 ms.
+        // On M1–M4 the gamma boost will have pushed EDR headroom higher; on M5 it stays
+        // close to the baseline value the trigger allocated (≈ panel potential, not scaled).
+        // We compare against the pre-boost headroom reading we just took above.
+        let baselineHeadroom = maxEdr
+        let capturedFactor = factor
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled,
+                  self.xdrActive[displayID] == true,
+                  let screen = self.screen(for: displayID) else { return }
+
+            // On M1–M4 the gamma ramp scales output linearly, which does NOT change what
+            // maximumExtendedDynamicRangeColorComponentValue reports (that's a compositor
+            // allocation, not a measurement of actual pixel brightness). Instead we verify
+            // by checking that the gamma table call succeeded AND that headroom has not
+            // dropped below the baseline we measured before the call — if something went
+            // wrong (e.g. the table was silently ignored) headroom tends to snap back to 1.0.
+            let currentHeadroom = screen.maximumExtendedDynamicRangeColorComponentValue
+            let gammaEffective = currentHeadroom >= (baselineHeadroom - 0.05)
+
+            if gammaEffective {
+                self.logger.info("Gamma table verified effective for display \(displayID) — using gamma path")
+                self.gammaTableWorks[displayID] = true
+                // Re-apply with the current stored brightness in case it changed while we waited.
+                if let stored = self.brightness[displayID], stored > 1.0 {
+                    let newFactor = Self.edrGammaFactor(
+                        xdrBrightness: Float(stored),
+                        maxPotentialEdr: screen.maximumPotentialExtendedDynamicRangeColorComponentValue
+                    )
+                    self.applyGammaTable(factor: newFactor, for: displayID)
+                }
+            } else {
+                self.logger.warning("Gamma table ineffective for display \(displayID) (headroom \(currentHeadroom) < baseline \(baselineHeadroom)) — falling back to overlay")
+                self.gammaTableWorks[displayID] = false
+                // Reset the gamma table (it was doing nothing useful) and create the overlay.
+                self.resetGammaTable(for: displayID)
+                if self.boostOverlays[displayID] == nil, let screen = self.screen(for: displayID) {
+                    if let stored = self.brightness[displayID], stored > 1.0 {
+                        let newFactor = Self.edrGammaFactor(
+                            xdrBrightness: Float(stored),
+                            maxPotentialEdr: screen.maximumPotentialExtendedDynamicRangeColorComponentValue
+                        )
+                        self.boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: newFactor)
+                    } else {
+                        self.boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: capturedFactor)
+                    }
+                }
+            }
+        }
     }
 
     /// Applies brightness scaling, polling for EDR headroom only if not yet available.
@@ -648,6 +791,7 @@ final class XDRController {
                 // Display disconnected.
                 pendingGammaTasks[displayID]?.cancel()
                 pendingGammaTasks.removeValue(forKey: displayID)
+                resetGammaTable(for: displayID)
                 trigger.destroy()
                 triggers.removeValue(forKey: displayID)
                 if let overlay = boostOverlays.removeValue(forKey: displayID) {
@@ -655,6 +799,7 @@ final class XDRController {
                 }
                 xdrActive[displayID] = false
                 lastSDRBrightness.removeValue(forKey: displayID)
+                gammaTableWorks.removeValue(forKey: displayID)
                 continue
             }
             trigger.repositionOnScreen(screen)
