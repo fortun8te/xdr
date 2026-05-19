@@ -4,39 +4,8 @@ extension Color {
     // Amber accent for XDR active states
     static let xdrAmber = Color(red: 0.96, green: 0.62, blue: 0.04)       // #F59E0B
     static let xdrOrange = Color(red: 0.98, green: 0.45, blue: 0.09)      // #F97316
-    static let xdrGlow = Color(red: 0.99, green: 0.90, blue: 0.54)        // #FDE68A
 
     // Gradient for XDR range on slider
-    static let xdrGradientStart = Color(red: 0.98, green: 0.75, blue: 0.14) // #FBBF24
     static let xdrGradientEnd = Color(red: 0.99, green: 0.90, blue: 0.54)   // #FDE68A
-
-    // Blue accent (matches app icon gradient)
-    static let appBlue = Color(red: 0x16/255, green: 0x31/255, blue: 0xFF/255)       // #1631FF
-    static let appBlueLight = Color(red: 0x5A/255, green: 0x6E/255, blue: 0xFF/255)  // lighter end
-
-    // Semantic colors
-    static let sliderTrackSDR = Color.primary.opacity(0.15)
-    static let sliderTrackXDR = Color.xdrAmber.opacity(0.3)
-    static let nitsLabel = Color.secondary
-
-    // Menu bar badge
-    static let xdrBadge = Color.xdrAmber
 }
 
-extension ShapeStyle where Self == LinearGradient {
-    static var xdrGradient: LinearGradient {
-        LinearGradient(
-            colors: [.xdrGradientStart, .xdrGradientEnd],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-
-    static var appGradient: LinearGradient {
-        LinearGradient(
-            colors: [.appBlue, .appBlueLight],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-}

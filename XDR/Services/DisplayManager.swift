@@ -26,8 +26,9 @@ final class DisplayManager {
     // MARK: - Callback Registration
 
     private func registerCallbacks() {
-        CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, Unmanaged.passUnretained(self).toOpaque())
-
+        // AppKit notification is sufficient for display config changes; the IOKit
+        // CGDisplayRegisterReconfigurationCallback is redundant and produces duplicate
+        // refreshes — removed.
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -42,11 +43,11 @@ final class DisplayManager {
     // MARK: - Display Enumeration
 
     func refreshDisplays() {
-        var onlineDisplays = [CGDirectDisplayID](repeating: 0, count: 16)
+        // Two-pass enumeration: first query for count, then allocate exactly.
         var displayCount: UInt32 = 0
-
-        let error = CGGetOnlineDisplayList(16, &onlineDisplays, &displayCount)
-        guard error == .success else { return }
+        guard CGGetOnlineDisplayList(0, nil, &displayCount) == .success else { return }
+        var onlineDisplays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+        guard CGGetOnlineDisplayList(displayCount, &onlineDisplays, &displayCount) == .success else { return }
 
         let activeIDs = Array(onlineDisplays.prefix(Int(displayCount)))
         let modelIdentifier = Self.readModelIdentifier()
@@ -123,20 +124,4 @@ final class DisplayManager {
     }
 }
 
-// MARK: - CG Reconfiguration Callback (C function)
 
-private func displayReconfigurationCallback(
-    _ display: CGDirectDisplayID,
-    _ flags: CGDisplayChangeSummaryFlags,
-    _ userInfo: UnsafeMutableRawPointer?
-) {
-    guard let userInfo else { return }
-    let manager = Unmanaged<DisplayManager>.fromOpaque(userInfo).takeUnretainedValue()
-
-    let relevant: CGDisplayChangeSummaryFlags = [.addFlag, .removeFlag, .enabledFlag, .disabledFlag]
-    guard flags.intersection(relevant).isEmpty == false else { return }
-
-    Task { @MainActor in
-        manager.refreshDisplays()
-    }
-}

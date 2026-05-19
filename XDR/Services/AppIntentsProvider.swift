@@ -31,7 +31,10 @@ struct ToggleXDRIntent: AppIntent {
         }
 
         if shouldEnable {
-            lifecycle.setBrightness(XDRController.maxBrightness, for: displayID)
+            guard controller.isXDRCapable(displayID: displayID) else {
+                throw IntentError.displayNotFound("This display does not support XDR brightness")
+            }
+            lifecycle.setBrightness(1.4, for: displayID)
         } else {
             lifecycle.setBrightness(1.0, for: displayID)
         }
@@ -59,20 +62,19 @@ struct SetBrightnessIntent: AppIntent {
         }
 
         let controller = lifecycle.xdrController
-        let clampedNits = max(0, min(nits, 1600))
-        let brightness = controller.brightnessFromNits(Double(clampedNits))
+        let manager = lifecycle.displayManager
 
-        let displayID: CGDirectDisplayID
+        let matchedDisplay: DisplayInfo?
         if let name = displayName {
-            let manager = lifecycle.displayManager
-            if let match = manager.displays.first(where: { $0.name.localizedCaseInsensitiveContains(name) }) {
-                displayID = match.id
-            } else {
-                displayID = CGMainDisplayID()
-            }
+            matchedDisplay = manager.displays.first(where: { $0.name.localizedCaseInsensitiveContains(name) })
         } else {
-            displayID = CGMainDisplayID()
+            matchedDisplay = manager.displays.first(where: { $0.id == CGMainDisplayID() })
         }
+        let displayID = matchedDisplay?.id ?? CGMainDisplayID()
+        let displayIsXDR = matchedDisplay?.isXDR ?? false
+        let maxNits = matchedDisplay?.maxNits ?? (displayIsXDR ? 1600 : 500)
+        let clampedNits = max(0, min(nits, maxNits))
+        let brightness = controller.brightnessFromNits(Double(clampedNits))
 
         lifecycle.setBrightness(brightness, for: displayID)
         return .result()
@@ -106,7 +108,7 @@ struct PresetNameProvider: DynamicOptionsProvider {
     }
 
     func defaultResult() async -> String? {
-        return "Indoor"
+        return "Normal"
     }
 }
 

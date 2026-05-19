@@ -22,9 +22,6 @@ packages:
   LaunchAtLogin:
     url: https://github.com/sindresorhus/LaunchAtLogin-Modern
     from: "1.0.0"
-  Sparkle:
-    url: https://github.com/sparkle-project/Sparkle
-    from: "2.5.0"
 
 targets:
   XDR:
@@ -42,11 +39,10 @@ targets:
     dependencies:
       - package: KeyboardShortcuts
       - package: LaunchAtLogin
-      - package: Sparkle
     info:
       path: XDR/Resources/Info.plist
       properties:
-        LSUIElement: true
+        LSUIElement: false
         NSAppleScriptEnabled: true
         OSAScriptingDefinition: XDR.sdef
         CFBundleName: XDR

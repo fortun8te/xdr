@@ -26,6 +26,9 @@ final class SleepWakeManager {
     /// Debounce flag: prevents duplicate restoration when both didWake and screensDidWake fire
     private var isWakeRestoreScheduled = false
 
+    /// Post-wake watchdog: periodically refreshes overlays for 30 seconds after wake
+    private var watchdogTask: Task<Void, Never>?
+
     private let onRestore: (CGDirectDisplayID, Double) -> Void
     private let onRefresh: () -> Void
     private let logger = Logger(subsystem: "com.xdr.app", category: "SleepWake")
@@ -45,6 +48,15 @@ final class SleepWakeManager {
         // from nonisolated deinit. NSWorkspace notification observers are automatically
         // cleaned up when the observer is deallocated.
         NotificationCenter.default.removeObserver(self)
+        DistributedNotificationCenter.default().removeObserver(self)
+    }
+
+    // MARK: - Shutdown
+
+    /// Cancels the post-wake watchdog task. Call from AppLifecycleManager.shutdown().
+    func shutdown() {
+        watchdogTask?.cancel()
+        watchdogTask = nil
     }
 
     // MARK: - Public API
@@ -91,6 +103,13 @@ final class SleepWakeManager {
             name: NSWorkspace.screensDidWakeNotification,
             object: nil
         )
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(screenDidUnlock(_:)),
+            name: NSNotification.Name("com.apple.screenIsUnlocked"),
+            object: nil
+        )
     }
 
     // MARK: - Sleep Handlers
@@ -113,6 +132,14 @@ final class SleepWakeManager {
         scheduleWakeRestore(source: "Screens did wake")
     }
 
+    @objc private func screenDidUnlock(_ note: Notification) {
+        logger.info("Screen unlocked — scheduling delayed restore")
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.0))
+            self?.restoreAllDisplays(pass: 0)
+        }
+    }
+
     /// Shared wake-restore scheduling with debounce so only one double-pass runs
     /// even when both didWake and screensDidWake fire on the same wake event.
     private func scheduleWakeRestore(source: String) {
@@ -128,10 +155,29 @@ final class SleepWakeManager {
             self?.restoreAllDisplays(pass: 1)
         }
 
-        // Pass 2: 3.0s — catches slow-initializing displays (Thunderbolt, USB-C hubs)
+        // Pass 2: 3.0s — catches slow-initializing displays (Thunderbolt, USB-C hubs).
+        // Skip onRefresh() here (pass != 0) to avoid a second Metal teardown that causes
+        // a visible brightness dip ~3s after wake.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             self?.restoreAllDisplays(pass: 2)
             self?.isWakeRestoreScheduled = false
+        }
+
+        // Watchdog: 3 checks × 5s = 15s of post-wake monitoring
+        // Each tick tears down stale Metal state (onRefresh) then restores brightness (onRestore)
+        watchdogTask?.cancel()
+        watchdogTask = Task { @MainActor [weak self] in
+            for tick in 0..<3 {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, let self else { return }
+                self.logger.info("Watchdog tick \(tick + 1)/3 — refreshing overlays")
+                self.onRefresh()
+                // Re-apply brightness so XDR state is rebuilt after refresh teardown
+                for (displayID, brightness) in self.savedBrightness {
+                    guard self.savedXDRActive[displayID] == true else { continue }
+                    self.onRestore(displayID, brightness)
+                }
+            }
         }
     }
 
@@ -140,9 +186,14 @@ final class SleepWakeManager {
     private func restoreAllDisplays(pass: Int) {
         isRestoring = true
 
-        // Tear down and recreate overlays to ensure fresh Metal state after sleep/wake
-        logger.info("Restore pass \(pass) — refreshing overlays before restoration")
-        onRefresh()
+        // Tear down and recreate overlays to ensure fresh Metal state after sleep/wake.
+        // Skip on pass 2 — a second teardown at 3s causes a visible brightness dip.
+        if pass != 2 {
+            logger.info("Restore pass \(pass) — refreshing overlays before restoration")
+            onRefresh()
+        } else {
+            logger.info("Restore pass \(pass) — skipping overlay refresh to prevent brightness dip")
+        }
 
         let clamshellClosed = isClamshellClosed()
 

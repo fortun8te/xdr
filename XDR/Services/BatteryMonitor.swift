@@ -11,51 +11,20 @@ final class BatteryMonitor {
     var isCharging: Bool = true
     var isOnBattery: Bool = false
 
-    var powerSource: String {
-        isOnBattery ? "Battery" : "AC Power"
-    }
-
-    var batteryLevelDescription: String {
-        if !isOnBattery { return "Plugged In" }
-        return "\(batteryLevel)%"
-    }
-
-    var isLowBattery: Bool {
-        isOnBattery && batteryLevel < 20
-    }
-
-    /// Time remaining on battery, or `nil` when plugged in, calculating,
-    /// or on a Mac with no battery (e.g. Mac mini / Mac Pro).
-    var batteryTimeRemaining: String? {
-        guard isOnBattery,
-              let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [Any],
-              let source = sources.first,
-              let desc = IOPSGetPowerSourceDescription(snapshot, source as CFTypeRef)?
-                  .takeUnretainedValue() as? [String: Any],
-              let minutes = desc[kIOPSTimeToEmptyKey] as? Int,
-              minutes >= 0
-        else { return nil }
-
-        let hrs = minutes / 60
-        let mins = minutes % 60
-        if hrs > 0 {
-            return "\(hrs) hr \(mins) min"
-        } else {
-            return "\(mins) min"
-        }
-    }
-
     // MARK: - Private
 
-    /// Safe because this @MainActor class only reads/writes the source on the
-    /// main thread. `nonisolated(unsafe)` silences the concurrency checker in
-    /// `deinit`, which the compiler treats as nonisolated.
-    nonisolated(unsafe) private var runLoopSource: CFRunLoopSource?
+    /// Storage for the IOKit power-source notification run-loop source. Excluded
+    /// from `@Observable` tracking so `deinit` (which is nonisolated) can read
+    /// it to remove the source from the main run loop. Writes only happen on the
+    /// main actor via `startMonitoring`, so there is no actual data race.
+    @ObservationIgnored
+    private var runLoopSource: CFRunLoopSource?
 
     /// Guards against the run loop source callback firing during deallocation.
-    /// Marked `nonisolated(unsafe)` so `deinit` (which is nonisolated) can write it.
-    nonisolated(unsafe) private var isShuttingDown = false
+    /// Excluded from observation so both the C callback (off-actor) and `deinit`
+    /// can access it without tripping the observation machinery.
+    @ObservationIgnored
+    private var isShuttingDown = false
 
     // MARK: - Init / Deinit
 
@@ -64,6 +33,8 @@ final class BatteryMonitor {
         startMonitoring()
     }
 
+    // Order matters: set isShuttingDown first so the callback no-ops,
+    // then remove the run loop source to prevent further invocations.
     deinit {
         isShuttingDown = true
         if let source = runLoopSource {
@@ -83,8 +54,17 @@ final class BatteryMonitor {
 
     private func updateBatteryState() {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [Any],
-              let source = sources.first,
+              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [Any]
+        else { return }
+
+        // Filter to the internal battery so a UPS does not shadow the real battery level.
+        let internalSource = sources.first { src in
+            guard let desc = IOPSGetPowerSourceDescription(snapshot, src as CFTypeRef)?
+                    .takeUnretainedValue() as? [String: Any] else { return false }
+            return (desc[kIOPSTypeKey] as? String) == kIOPSInternalBatteryType
+        } ?? sources.first  // fall back to first source on desktops without a battery
+
+        guard let source = internalSource,
               let desc = IOPSGetPowerSourceDescription(snapshot, source as CFTypeRef)?
                   .takeUnretainedValue() as? [String: Any]
         else { return }
@@ -99,6 +79,8 @@ final class BatteryMonitor {
     // MARK: - Run Loop Monitoring
 
     private func startMonitoring() {
+        // Safe to use passUnretained: the run loop source is removed in deinit
+        // before deallocation completes, so the callback cannot fire on a freed object.
         let context = Unmanaged.passUnretained(self).toOpaque()
 
         guard let source = IOPSNotificationCreateRunLoopSource({ context in

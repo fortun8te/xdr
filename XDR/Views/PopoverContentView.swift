@@ -1,6 +1,30 @@
+// XDR — Menu bar popover (rewritten May 2026)
+// ============================================================
+// Minimal popover surfaced from the menu bar. Mirrors the MainWindowView
+// design language (Sp tokens, CardShape, slim XDR boost meter) but rendered
+// on `.ultraThinMaterial` since it floats over the desktop.
+//
+// No presets row, no legacy DisplayCardView / BrightnessSliderView — those
+// were retired with the redesign. Layout, top to bottom:
+//   * Greeting header
+//   * Per-display compact card (name, subtitle, big serif nits, SDR/XDR pill,
+//     slim XDR boost meter on the bottom row)
+//   * Empty state when no displays connected
+//   * Settings panel (slid in/out via Group transition) — unchanged
+//   * Bottom bar with Settings/Back + Quit
+// ============================================================
+
 import SwiftUI
 import LaunchAtLogin
 import KeyboardShortcuts
+
+// MARK: - Cached formatters
+
+private let nitsFormatter: NumberFormatter = {
+    let f = NumberFormatter()
+    f.numberStyle = .decimal
+    return f
+}()
 
 struct PopoverContentView: View {
     @Environment(AppState.self) private var appState
@@ -11,13 +35,12 @@ struct PopoverContentView: View {
     @State private var quitHovered = false
 
     @AppStorage("userName") private var userName = ""
+    @AppStorage("autoDisableOnBattery") private var autoDisable = false
+    @AppStorage("batteryThreshold") private var batteryThreshold = 20
 
     private var firstName: String {
-        // First check if userName was set by @AppStorage
         if !userName.isEmpty { return userName }
-        // Fall back to bundledUserName if set at build time
         if !XDRConstants.bundledUserName.isEmpty { return XDRConstants.bundledUserName }
-        // Finally, system username
         return NSFullUserName().components(separatedBy: " ").first ?? "there"
     }
 
@@ -32,29 +55,38 @@ struct PopoverContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Sp.md) {
             // MARK: - Header
-
             HStack {
                 Text(greeting)
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundStyle(.primary)
-                Spacer()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
             }
 
-            if showSettings {
-                // MARK: - Inline Settings
-                settingsPanel
-            } else {
-                // MARK: - Display Cards + Sliders
-                displaysPanel
+            Group {
+                if showSettings {
+                    settingsPanel
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .trailing)),
+                            removal: .opacity.combined(with: .move(edge: .trailing))
+                        ))
+                } else {
+                    displaysPanel
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .leading)),
+                            removal: .opacity.combined(with: .move(edge: .leading))
+                        ))
+                }
             }
+            .animation(.easeInOut(duration: 0.2), value: showSettings)
 
             Divider().opacity(0.3)
 
             // MARK: - Bottom Bar
-
             HStack {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -68,7 +100,7 @@ struct PopoverContentView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .opacity(settingsHovered ? 1.0 : 0.7)
-                .onHover { isHovered in settingsHovered = isHovered }
+                .onHover { settingsHovered = $0 }
 
                 Spacer()
 
@@ -82,10 +114,10 @@ struct PopoverContentView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .opacity(quitHovered ? 1.0 : 0.7)
-                .onHover { isHovered in quitHovered = isHovered }
+                .onHover { quitHovered = $0 }
             }
         }
-        .padding(16)
+        .padding(Sp.lg)
         .frame(width: 320)
         .background(.ultraThinMaterial)
     }
@@ -93,43 +125,21 @@ struct PopoverContentView: View {
     // MARK: - Displays Panel
 
     private var displaysPanel: some View {
-        VStack(spacing: 12) {
-            ForEach(appState.displays) { display in
-                VStack(spacing: 8) {
-                    DisplayCardView(display: display)
-                    BrightnessSliderView(
-                        brightness: Binding(
-                            get: { appState.displays.first(where: { $0.id == display.id })?.brightness ?? 1.0 },
-                            set: { newValue in
-                                if let idx = appState.displays.firstIndex(where: { $0.id == display.id }) {
-                                    appState.displays[idx].brightness = newValue
-                                    lifecycle.setBrightness(newValue, for: display.id)
-                                }
-                            }
-                        ),
-                        maxBrightness: display.isXDR ? 2.0 : 1.0,
-                        isXDR: display.isXDR,
-                        currentNits: appState.nitsForBrightness(display.brightness, maxNits: display.maxNits)
-                    )
+        VStack(spacing: Sp.sm) {
+            if appState.displays.isEmpty {
+                HStack(spacing: Sp.sm) {
+                    Image(systemName: "display.trianglebadge.exclamationmark")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                    Text("No displays detected")
+                        .font(.bodySmall)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.top, display.id == appState.displays.first?.id ? 4 : 0)
-            }
-
-            Divider().opacity(0.3)
-
-            // Presets
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8),
-                ],
-                spacing: 8
-            ) {
-                ForEach(BrightnessPreset.defaults) { preset in
-                    PresetButton(preset: preset) {
-                        lifecycle.applyPreset(preset)
-                    }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Sp.md)
+            } else {
+                ForEach(appState.displays) { display in
+                    PopoverDisplayCard(display: display)
                 }
             }
         }
@@ -139,7 +149,6 @@ struct PopoverContentView: View {
 
     private var settingsPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Name
             VStack(alignment: .leading, spacing: 6) {
                 Text("Name")
                     .font(.caption)
@@ -149,11 +158,8 @@ struct PopoverContentView: View {
                     .font(.subheadline)
             }
 
-            // Toggles — all left-aligned, consistent style
             VStack(alignment: .leading, spacing: 10) {
                 @Bindable var state = appState
-                @AppStorage("autoDisableOnBattery") var autoDisable = false
-                @AppStorage("batteryThreshold") var threshold = 20
 
                 HStack {
                     LaunchAtLogin.Toggle("Launch at Login")
@@ -185,7 +191,7 @@ struct PopoverContentView: View {
                 }
 
                 if autoDisable {
-                    Picker("Disable below", selection: $threshold) {
+                    Picker("Disable below", selection: $batteryThreshold) {
                         Text("20%").tag(20)
                         Text("30%").tag(30)
                         Text("50%").tag(50)
@@ -197,7 +203,8 @@ struct PopoverContentView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Shortcuts
+            Divider().opacity(0.3)
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Shortcuts")
                     .font(.caption)
@@ -210,7 +217,6 @@ struct PopoverContentView: View {
                     .font(.subheadline)
             }
 
-            // Version
             Text("XDR v\(XDRConstants.appVersion)")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
@@ -220,28 +226,112 @@ struct PopoverContentView: View {
     }
 }
 
-// MARK: - Preset Button
+// MARK: - Popover Display Card
+//
+// Compact display card scoped to the popover. Mirrors MainWindowView's
+// DisplayCard but lives here so the popover can ship without depending on
+// types declared `private` inside MainWindowView.
 
-private struct PresetButton: View {
-    let preset: BrightnessPreset
-    let action: () -> Void
+private struct PopoverDisplayCard: View {
+    let display: DisplayInfo
+
+    @Environment(AppState.self) private var appState
+    @Environment(AppLifecycleManager.self) private var lifecycle
+    @Environment(\.colorScheme) private var scheme
+
+    private var headerIcon: String {
+        display.isBuiltIn ? "display" : "display.2"
+    }
+
+    private var subtitle: String {
+        switch (display.isBuiltIn, display.isXDR) {
+        case (true,  true):  return "Liquid Retina XDR"
+        case (true,  false): return "Built-in Display"
+        case (false, true):  return "Pro Display XDR"
+        case (false, false): return "External Display"
+        }
+    }
+
+    private var nitsString: String {
+        let n = appState.nitsForBrightness(display.brightness, maxNits: display.maxNits)
+        return nitsFormatter.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: preset.icon)
-                    .font(.system(size: 12, weight: .medium))
-                Text(preset.name)
-                    .font(.subheadline)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: Sp.sm) {
+            HStack(alignment: .top, spacing: Sp.sm) {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Image(systemName: headerIcon)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(.secondary)
+                        Text(display.name)
+                            .font(.bodyMedium)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Text(subtitle)
+                        .font(.bodySmall)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(nitsString)
+                            .font(.serif(20, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .contentTransition(.numericText())
+                        Text("nits")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                    PopoverModeBadge(isXDRActive: display.brightness > 1.0 && display.isXDR)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
-            .background(.quaternary)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            XDRBoostMeter(
+                brightness: display.brightness,
+                isXDR: display.isXDR,
+                onSet: { newValue in
+                    lifecycle.setBrightness(newValue, for: display.id)
+                }
+            )
         }
-        .buttonStyle(.plain)
+        .padding(Sp.sm)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: CardShape.corner)
+                .fill(scheme == .dark
+                    ? Color.white.opacity(0.05)
+                    : Color.black.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CardShape.corner)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: CardShape.borderUnselected)
+        )
+    }
+}
+
+// MARK: - Mode badge (popover-scoped)
+
+private struct PopoverModeBadge: View {
+    let isXDRActive: Bool
+
+    var body: some View {
+        Text(isXDRActive ? "XDR" : "SDR")
+            .font(.system(size: 9, weight: .semibold))
+            .tracking(0.5)
+            .foregroundStyle(isXDRActive ? Color.xdrAmber : Color.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(
+                (isXDRActive ? Color.xdrAmber : Color.secondary).opacity(0.14),
+                in: Capsule()
+            )
     }
 }
 
