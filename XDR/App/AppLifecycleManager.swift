@@ -117,12 +117,19 @@ final class AppLifecycleManager {
                 self.displayManager.refreshDisplays()
                 let currentIDs = Set(self.displayManager.displays.map(\.id))
 
+                // Pre-warm EDR headroom on any newly-connected XDR-capable displays
+                // so the first activation on them doesn't have to wait for headroom.
+                for fresh in self.displayManager.displays where fresh.isXDR {
+                    self.xdrController.warmUpEDRTrigger(for: fresh.id)
+                }
+
                 // Restore XDR for displays that just reconnected
                 let reconnected = currentIDs.subtracting(previousIDs)
                 for displayID in reconnected {
                     if let saved = self.sleepWakeManager.savedBrightness[displayID],
                        saved > XDRConstants.sdrMaxBrightness {
-                        self.setBrightness(saved, for: displayID)
+                        let startBrightness = self.xdrController.getBrightness(for: displayID)
+                        self.animateBrightness(from: startBrightness, to: saved, for: displayID)
                     }
                 }
 
@@ -146,6 +153,15 @@ final class AppLifecycleManager {
     // MARK: - Public API
 
     func syncBrightnessFromSystem() {
+        // Pre-warm EDR headroom on every XDR-capable display so the user's first
+        // hotkey toggle or slider drag doesn't have to wait ~50–150ms for the
+        // compositor to allocate headroom. Without this, the first XDR activation
+        // shows a visible "ramp to SDR max, sit flat, snap to boost" blink at the
+        // 1.0 boundary because gamma writes during the wait are silently clamped.
+        for display in displayManager.displays where display.isXDR {
+            xdrController.warmUpEDRTrigger(for: display.id)
+        }
+
         for display in displayManager.displays {
             let key = "xdr_brightness_\(display.id)"
             let savedXDR = UserDefaults.standard.double(forKey: key)

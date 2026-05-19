@@ -556,12 +556,25 @@ final class XDRController {
             overlay.destroy()
         }
 
-        // Destroy trigger.
-        if let trigger = triggers.removeValue(forKey: displayID) {
-            trigger.destroy()
-        }
+        // Keep the trigger alive. Tearing it down here means the next time the user
+        // toggles XDR on, the compositor needs ~50-150ms to re-allocate headroom,
+        // and during that window gamma writes are silently clamped — producing a
+        // visible "ramp to SDR max, sit flat, snap to boost" blink at the boundary.
+        // Leaving the trigger up keeps headroom pre-allocated so activation is
+        // instantaneous. Cost is one always-running 1x1 invisible Metal layer.
 
         xdrActive[displayID] = false
+    }
+
+    /// Pre-allocates the EDR trigger for a display so HDR headroom is available
+    /// the moment the user crosses into XDR range. Call this once per XDR-capable
+    /// display at app launch (or display connect) so the first hotkey toggle /
+    /// slider drag doesn't show a "flat at SDR max, then snap to boost" step.
+    func warmUpEDRTrigger(for displayID: CGDirectDisplayID) {
+        guard isXDRCapable(displayID: displayID) else { return }
+        guard triggers[displayID] == nil else { return }
+        guard let screen = screen(for: displayID) else { return }
+        triggers[displayID] = EDRTrigger(for: screen)
     }
 
     // MARK: - Headroom Monitor
@@ -599,8 +612,20 @@ final class XDRController {
     /// Returns `true` if `CGSetDisplayTransferByTable` reported success.
     /// Note: M5 may return success but have no visual effect — empirical verification
     /// is done by `applyGammaWhenReady` after a 500 ms delay.
+    /// Per-display cache of the last gamma factor we wrote, so we can skip
+    /// `CGSetDisplayTransferByTable` calls that wouldn't change the curve
+    /// perceptibly. The animator drives this function at 60Hz; each call is a
+    /// system-call into the graphics framework which can micro-blip the panel.
+    private var lastGammaFactor: [CGDirectDisplayID: Float] = [:]
+
     @discardableResult
     private func applyGammaTable(factor: Float, for displayID: CGDirectDisplayID) -> Bool {
+        // Skip writes that wouldn't perceptibly change the panel output.
+        // 0.005 ≈ 0.5% of the boost range — below the visible threshold.
+        if let last = lastGammaFactor[displayID], abs(last - factor) < 0.005 {
+            return true
+        }
+
         let length: UInt32 = 256
         var red   = [CGGammaValue](repeating: 0, count: Int(length))
         var green = [CGGammaValue](repeating: 0, count: Int(length))
@@ -616,6 +641,9 @@ final class XDRController {
         }
 
         let result = CGSetDisplayTransferByTable(displayID, length, &red, &green, &blue)
+        if result == .success {
+            lastGammaFactor[displayID] = factor
+        }
         return result == .success
     }
 
@@ -629,6 +657,7 @@ final class XDRController {
             ramp[i] = CGGammaValue(Float(i) / Float(length - 1))
         }
         _ = CGSetDisplayTransferByTable(displayID, length, &ramp, &ramp, &ramp)
+        lastGammaFactor.removeValue(forKey: displayID)
     }
 
     // MARK: - Gamma Scaling
@@ -755,7 +784,16 @@ final class XDRController {
         }
 
         // Slow path: EDR not yet engaged (first activation). Poll until ready.
-        pendingGammaTasks[displayID]?.cancel()
+        // IMPORTANT: if a polling task is already running, do NOT cancel it. The
+        // polling task reads `self.brightness[displayID]` when headroom comes
+        // online, so it'll naturally pick up the latest value. Cancelling on
+        // every animation frame (the animator hits this 60×/sec) kept resetting
+        // the 50ms sleep window, so the headroom check never actually ran — the
+        // gamma boost only engaged AFTER the animation finished, producing a
+        // visible jump from "SDR max" to "boosted" instead of a smooth crossing.
+        if pendingGammaTasks[displayID] != nil {
+            return
+        }
 
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -765,14 +803,15 @@ final class XDRController {
 
                 if let s = self.screen(for: displayID),
                    s.maximumExtendedDynamicRangeColorComponentValue > 1.05 {
-                    guard let stored = self.brightness[displayID], stored > 1.0 else { return }
+                    guard let stored = self.brightness[displayID], stored > 1.0 else {
+                        self.pendingGammaTasks.removeValue(forKey: displayID)
+                        return
+                    }
                     self.applyGammaScale(for: displayID, brightness: Float(stored))
                     self.pendingGammaTasks.removeValue(forKey: displayID)
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(50))
-                // Re-check after sleep: the cancelled task may have woken from sleep
-                // before the cancellation flag was observed.
                 if Task.isCancelled { return }
             }
             self.pendingGammaTasks.removeValue(forKey: displayID)
