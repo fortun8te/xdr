@@ -98,9 +98,11 @@ final class AppLifecycleManager {
     }
 
     private func startDisplayMonitoring() {
-        // Initial display enumeration happens in DisplayManager.init
-        // Sync display brightness readings
-        syncBrightnessFromSystem()
+        // Initial display enumeration happens in DisplayManager.init.
+        // We deliberately do NOT call syncBrightnessFromSystem() here — wireLifecycle()
+        // in XDRApp will trigger the restore once appState is wired up. Calling it twice
+        // (once here with appState=nil, once later from wireLifecycle) caused a visible
+        // double-write on launch: SDR jumped, then jumped again as the second pass ran.
 
         // Re-sync appState.displays when monitors are connected/disconnected
         NotificationCenter.default.addObserver(
@@ -148,12 +150,16 @@ final class AppLifecycleManager {
             let key = "xdr_brightness_\(display.id)"
             let savedXDR = UserDefaults.standard.double(forKey: key)
 
-            // If a persisted XDR value exists (> 1.0), restore it instead of
-            // reading the SDR-only value from DisplayServices.
+            // If a persisted XDR value exists (> 1.0), restore it. Animate the
+            // transition instead of jumping so the user doesn't see a discrete
+            // SDR step + delayed boost = visible blink on launch. The animator
+            // also respects the smoothTransitions flag.
             let current: Double
             if savedXDR > XDRConstants.sdrMaxBrightness {
                 current = savedXDR
-                setBrightness(savedXDR, for: display.id)
+                let displayID = display.id
+                let startBrightness = xdrController.getBrightness(for: displayID)
+                animateBrightness(from: startBrightness, to: savedXDR, for: displayID)
             } else {
                 current = xdrController.getBrightness(for: display.id)
                 UserDefaults.standard.removeObject(forKey: key)
