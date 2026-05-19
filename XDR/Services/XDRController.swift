@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import IOKit
 import Metal
 import MetalKit
 import os.log
@@ -51,9 +50,12 @@ private final class EDRTrigger: NSObject, MTKViewDelegate {
 
         let metalView = MTKView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), device: device)
         metalView.colorPixelFormat = .rgba16Float
-        metalView.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
+        metalView.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
         metalView.clearColor = MTLClearColor(red: 16.0, green: 16.0, blue: 16.0, alpha: 1.0)
-        metalView.preferredFramesPerSecond = 5
+        // Bug 2 fix: 60 fps keeps EDR headroom pinned during app-focus transitions.
+        // At 5 fps the compositor can drop headroom between frames; 60 fps is negligible
+        // GPU cost for a 1×1 pixel view and matches the overlay's cadence.
+        metalView.preferredFramesPerSecond = 60
         metalView.isPaused = false
         metalView.enableSetNeedsDisplay = false
 
@@ -61,7 +63,7 @@ private final class EDRTrigger: NSObject, MTKViewDelegate {
             layer.wantsExtendedDynamicRangeContent = true
             layer.isOpaque = false
             layer.pixelFormat = .rgba16Float
-            layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
+            layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
         }
 
         let window = NSWindow(
@@ -74,8 +76,17 @@ private final class EDRTrigger: NSObject, MTKViewDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.ignoresMouseEvents = true
-        window.level = .screenSaver
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // Bug 1 fix: CGShieldingWindowLevel() is above .screenSaver and above the
+        // Space-transition overlay that macOS uses during Mission Control / full-screen
+        // app switches. At this level the window is never occluded by the Space-change
+        // animation layer, eliminating the blink that occurred at .screenSaver level.
+        window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        // canJoinAllSpaces — appears on every Space without re-attaching.
+        // fullScreenAuxiliary — stays visible above other apps' full-screen content.
+        // ignoresCycle — never enters Cmd+~ window cycling.
+        // (Dropped .stationary — it's about Mission Control scroll alignment,
+        // not Space membership, and it can cause the window to lag a Space switch.)
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         window.sharingType = .none
         window.hasShadow = false
         window.contentView = metalView
@@ -157,7 +168,9 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
         metalView.clearColor = MTLClearColor(
             red: Double(factor), green: Double(factor), blue: Double(factor), alpha: 1.0
         )
-        metalView.preferredFramesPerSecond = 10
+        // 60fps so slider drags translate to smooth brightness changes rather
+        // than chunky 10fps steps that read as flicker.
+        metalView.preferredFramesPerSecond = 60
         metalView.isPaused = false
         metalView.enableSetNeedsDisplay = false
 
@@ -178,8 +191,12 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.ignoresMouseEvents = true
-        window.level = .screenSaver
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // Bug 1 fix: same level as the trigger window — CGShieldingWindowLevel()
+        // survives Space-change animations and full-screen app transitions without
+        // requiring orderFrontRegardless() to be called after the switch.
+        window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        // Same Space-friendly behavior as the trigger window.
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         window.sharingType = .none
         window.hasShadow = false
         window.contentView = metalView
@@ -233,62 +250,6 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
     }
 }
 
-// MARK: - Gamma Table
-
-private struct GammaTable {
-    var red: [CGGammaValue]
-    var green: [CGGammaValue]
-    var blue: [CGGammaValue]
-    let sampleCount: UInt32
-
-    static func read(for displayID: CGDirectDisplayID) -> GammaTable? {
-        let capacity: UInt32 = 256
-        var red = [CGGammaValue](repeating: 0, count: Int(capacity))
-        var green = [CGGammaValue](repeating: 0, count: Int(capacity))
-        var blue = [CGGammaValue](repeating: 0, count: Int(capacity))
-        var sampleCount: UInt32 = 0
-
-        let err = CGGetDisplayTransferByTable(displayID, capacity, &red, &green, &blue, &sampleCount)
-        guard err == CGError.success else { return nil }
-
-        return GammaTable(red: red, green: green, blue: blue, sampleCount: sampleCount)
-    }
-
-    /// Scale the table by a factor. Values CAN exceed 1.0 — this maps into the EDR range
-    /// once the system has allocated HDR headroom via the trigger overlay.
-    func scaled(by factor: Float) -> GammaTable {
-        GammaTable(
-            red: red.map { $0 * CGGammaValue(factor) },
-            green: green.map { $0 * CGGammaValue(factor) },
-            blue: blue.map { $0 * CGGammaValue(factor) },
-            sampleCount: sampleCount
-        )
-    }
-
-    func apply(to displayID: CGDirectDisplayID) {
-        var r = red
-        var g = green
-        var b = blue
-        CGSetDisplayTransferByTable(displayID, sampleCount, &r, &g, &b)
-    }
-}
-
-// MARK: - Per-Display Gamma Restore
-
-/// Restores the gamma table for a single display to its ColorSync baseline,
-/// preserving the display's color profile (sRGB/P3 gamma curve).
-///
-/// Previous implementation wrote a LINEAR ramp which destroyed the ~2.2 gamma
-/// curve baked into the ColorSync profile, causing washed-out/wrong colors.
-private func restoreGamma(for displayID: CGDirectDisplayID, baseline: GammaTable?) {
-    if let baseline {
-        baseline.apply(to: displayID)
-    } else {
-        // No saved baseline — let ColorSync restore all displays as a fallback.
-        CGDisplayRestoreColorSyncSettings()
-    }
-}
-
 // MARK: - XDRController
 
 /// Manages display brightness on a unified scale from 0 nits to 1600 nits.
@@ -296,9 +257,9 @@ private func restoreGamma(for displayID: CGDirectDisplayID, baseline: GammaTable
 /// - `0.0`–`1.0` maps to SDR range (0–500 nits) via the native brightness API.
 /// - `1.0`–`2.0` maps to XDR range (500–1600 nits) via:
 ///   1. A 1×1 pixel EDR trigger that forces panel HDR headroom allocation.
-///   2. Gamma table scaling that boosts all desktop content into the EDR range.
-///
-/// No full-screen overlay. No compositing filter. No white flash risk.
+///   2. A full-screen Metal multiply overlay that boosts every pixel by the
+///      requested factor, composited at the GPU level so RGB ratios (and color
+///      accuracy) are preserved.
 @MainActor
 @Observable
 final class XDRController {
@@ -309,61 +270,26 @@ final class XDRController {
     static let xdrMaxNits: Double = 1600
     static let maxBrightness: Double = 2.0
 
-    // MARK: - M5 Detection
-
-    /// Returns `true` on M5-family Macs (Mac16,x and later) where
-    /// `CGSetDisplayTransferByTable` is broken (Apple bug FB22273730).
-    /// The gamma API returns success but has no visual effect on these machines.
-    private static func isGammaTableBroken() -> Bool {
-        let service = IOServiceGetMatchingService(
-            kIOMainPortDefault,
-            IOServiceMatching("IOPlatformExpertDevice")
-        )
-        guard service != IO_OBJECT_NULL else { return false }
-        defer { IOObjectRelease(service) }
-
-        guard let data = IORegistryEntryCreateCFProperty(
-            service,
-            "model" as CFString,
-            kCFAllocatorDefault,
-            0
-        )?.takeRetainedValue() as? Data else { return false }
-
-        let model = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .controlCharacters) ?? ""
-
-        // Mac16,x = M5 family. Future Mac17+ would also need this path.
-        guard model.hasPrefix("Mac") else { return false }
-        let digits = model.dropFirst(3).prefix(while: { $0.isNumber })
-        guard let generation = Int(digits) else { return false }
-        return generation >= 16
-    }
-
     // MARK: - State
 
     private(set) var brightness: [CGDirectDisplayID: Double] = [:]
     private var triggers: [CGDirectDisplayID: EDRTrigger] = [:]
-    private var baselineGamma: [CGDirectDisplayID: GammaTable] = [:]
     private var xdrActive: [CGDirectDisplayID: Bool] = [:]
     private var pendingGammaTasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
-    private let useMetalOverlay: Bool
     private var boostOverlays: [CGDirectDisplayID: EDRBoostOverlay] = [:]
+    // Bug 2 fix: per-display headroom monitor — polls maximumExtendedDynamicRangeColorComponentValue
+    // and re-asserts the trigger + overlay when headroom unexpectedly drops below 1.05
+    // (e.g. during app-focus transitions on the same Space).
+    private var headroomMonitorTasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
     private let logger = Logger(subsystem: "com.xdr.app", category: "XDRController")
+    // Observer tokens — retained so we can remove them in shutdown().
+    private var observerTokens: [NSObjectProtocol] = []
+    private var workspaceObserverTokens: [NSObjectProtocol] = []
 
     // MARK: - Lifecycle
 
     init() {
-        self.useMetalOverlay = Self.isGammaTableBroken()
-
-        // Capture baseline gamma for all displays at launch.
-        for screen in NSScreen.screens {
-            let displayID = screen.displayID
-            if let table = GammaTable.read(for: displayID) {
-                baselineGamma[displayID] = table
-            }
-        }
-
-        NotificationCenter.default.addObserver(
+        let screenToken = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
@@ -371,6 +297,46 @@ final class XDRController {
             Task { @MainActor in
                 self?.handleScreenChange()
             }
+        }
+        observerTokens.append(screenToken)
+
+        // Bug 1 fix: Re-assert window ordering on BOTH the active-space-did-change
+        // notification AND on app occlusion-state changes (covers same-Space app switches).
+        // The windows are now at CGShieldingWindowLevel() which survives most transitions,
+        // but orderFrontRegardless() on these notifications is a cheap belt-and-suspenders.
+        let spaceToken = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleSpaceChange()
+            }
+        }
+        workspaceObserverTokens.append(spaceToken)
+
+        // Bug 1 + Bug 2 fix: When ANY app's occlusion state changes (foreground/background
+        // switch) the compositor may momentarily collapse EDR headroom. Re-ordering the
+        // windows here keeps them front-most and triggers headroom re-assertion.
+        let occlusionToken = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeOcclusionStateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleSpaceChange()
+            }
+        }
+        observerTokens.append(occlusionToken)
+    }
+
+    @MainActor
+    private func handleSpaceChange() {
+        for (_, trigger) in triggers {
+            trigger.window.orderFrontRegardless()
+        }
+        for (_, overlay) in boostOverlays {
+            overlay.window.orderFrontRegardless()
         }
     }
 
@@ -382,13 +348,28 @@ final class XDRController {
         let clamped = max(0.0, min(value, Self.maxBrightness))
         brightness[displayID] = clamped
 
-        if clamped <= 1.0 {
-            setSDRBrightness(Float(clamped), for: displayID)
-            deactivateXDR(for: displayID)
+        // Hysteresis: once XDR is active, only tear it down when brightness <= 1.0.
+        // While currently inactive, only activate when brightness > 1.0. The slider's
+        // left deadband already snaps to 1.0 to prevent oscillation, but we keep the
+        // check here as a second line of defense against blink.
+        let currentlyActive = xdrActive[displayID] == true
+
+        if currentlyActive {
+            if clamped <= 1.0 {
+                setSDRBrightness(Float(clamped), for: displayID)
+                deactivateXDR(for: displayID)
+            } else {
+                setSDRBrightness(1.0, for: displayID)
+                applyGammaWhenReady(for: displayID, brightness: Float(clamped))
+            }
         } else {
-            setSDRBrightness(1.0, for: displayID)
-            activateXDR(for: displayID)
-            applyGammaWhenReady(for: displayID, brightness: Float(clamped))
+            if clamped > 1.0 {
+                setSDRBrightness(1.0, for: displayID)
+                activateXDR(for: displayID)
+                applyGammaWhenReady(for: displayID, brightness: Float(clamped))
+            } else {
+                setSDRBrightness(Float(clamped), for: displayID)
+            }
         }
     }
 
@@ -430,17 +411,22 @@ final class XDRController {
     }
 
     func refreshOverlays() {
-        // Tear down all existing triggers, overlays, and pending tasks so that
-        // activateXDR will recreate them with fresh Metal state.
-        for displayID in xdrActive.keys {
+        // Bug 4 fix: only do a full Metal teardown when XDR is actually active.
+        // For displays that have never activated XDR there is nothing to recreate,
+        // so we skip them entirely to avoid a no-op churn that previously ran even
+        // during slider drags and incidental state changes.
+        let activeDisplays = xdrActive.filter { $0.value == true }.map { $0.key }
+        guard !activeDisplays.isEmpty else { return }
+
+        for displayID in activeDisplays {
             pendingGammaTasks[displayID]?.cancel()
             pendingGammaTasks.removeValue(forKey: displayID)
 
+            headroomMonitorTasks[displayID]?.cancel()
+            headroomMonitorTasks.removeValue(forKey: displayID)
+
             if let overlay = boostOverlays.removeValue(forKey: displayID) {
                 overlay.destroy()
-            }
-            if !useMetalOverlay {
-                restoreGamma(for: displayID, baseline: baselineGamma[displayID])
             }
             if let trigger = triggers.removeValue(forKey: displayID) {
                 trigger.destroy()
@@ -451,48 +437,60 @@ final class XDRController {
     }
 
     func shutdown() {
+        // Remove NotificationCenter observers to stop blocks firing after release.
+        for token in observerTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        observerTokens.removeAll()
+        for token in workspaceObserverTokens {
+            NSWorkspace.shared.notificationCenter.removeObserver(token)
+        }
+        workspaceObserverTokens.removeAll()
+
         // Cancel all pending gamma polling tasks.
         for (_, task) in pendingGammaTasks {
             task.cancel()
         }
         pendingGammaTasks.removeAll()
 
-        // Destroy all boost overlays (M5 path).
+        // Bug 2/5 fix: cancel headroom monitor tasks to prevent dangling Tasks
+        // holding a weak reference to self after deallocation.
+        for (_, task) in headroomMonitorTasks {
+            task.cancel()
+        }
+        headroomMonitorTasks.removeAll()
+
+        // Destroy all boost overlays.
         for (_, overlay) in boostOverlays {
             overlay.destroy()
         }
         boostOverlays.removeAll()
 
         for (displayID, _) in triggers {
-            if !useMetalOverlay {
-                restoreGamma(for: displayID, baseline: baselineGamma[displayID])
-            }
             xdrActive[displayID] = false
         }
         for (_, trigger) in triggers {
             trigger.destroy()
         }
 
-        // Safety net: reset gamma for any display that was in XDR range
-        // but whose trigger was already removed (e.g. disconnected mid-session).
-        if !useMetalOverlay {
-            for (displayID, level) in brightness where level > 1.0 {
-                if triggers[displayID] == nil {
-                    restoreGamma(for: displayID, baseline: baselineGamma[displayID])
-                }
-            }
-        }
-
         triggers.removeAll()
-        baselineGamma.removeAll()
         brightness.removeAll()
     }
 
     // MARK: - SDR Brightness (Private API)
 
+    private var lastSDRBrightness: [CGDirectDisplayID: Float] = [:]
+
     private func setSDRBrightness(_ value: Float, for displayID: CGDirectDisplayID) {
         guard let setter = _DisplayServicesSetBrightness else { return }
         let clamped = max(0.0, min(value, 1.0))
+        // Skip if we just wrote this exact value — DisplayServices writes can
+        // momentarily blip the display (especially at native max) and rapid
+        // drag updates with the same value cause flicker.
+        if let last = lastSDRBrightness[displayID], abs(last - clamped) < 0.001 {
+            return
+        }
+        lastSDRBrightness[displayID] = clamped
         _ = setter(displayID, clamped)
     }
 
@@ -501,28 +499,26 @@ final class XDRController {
     private func activateXDR(for displayID: CGDirectDisplayID) {
         guard xdrActive[displayID] != true else { return }
 
-        // Always capture the current (unmodified) gamma table before scaling.
-        // This ensures we restore the correct ColorSync profile on deactivation,
-        // even if Night Shift / True Tone changed since the last activation.
-        if !useMetalOverlay {
-            baselineGamma[displayID] = GammaTable.read(for: displayID)
-        }
-
-        // Create 1x1 EDR trigger if needed — still required on M5 to allocate headroom.
+        // Create 1x1 EDR trigger if needed — required to allocate panel HDR headroom.
         if triggers[displayID] == nil {
             if let screen = screen(for: displayID) {
                 triggers[displayID] = EDRTrigger(for: screen)
             }
         }
 
-        // On M5, create the full-screen multiply overlay for brightness boost.
-        if useMetalOverlay, boostOverlays[displayID] == nil {
+        // Create the full-screen multiply overlay for brightness boost.
+        if boostOverlays[displayID] == nil {
             if let screen = screen(for: displayID) {
                 boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: 1.0)
             }
         }
 
         xdrActive[displayID] = true
+
+        // Bug 2 fix: start a lightweight headroom monitor (polls every ~100 ms).
+        // When the compositor drops EDR headroom (e.g. during app-focus transitions),
+        // we immediately re-assert the trigger and overlay so boost never disappears.
+        startHeadroomMonitor(for: displayID)
     }
 
     private func deactivateXDR(for displayID: CGDirectDisplayID) {
@@ -532,14 +528,13 @@ final class XDRController {
         pendingGammaTasks[displayID]?.cancel()
         pendingGammaTasks.removeValue(forKey: displayID)
 
-        // Destroy boost overlay (M5 path).
+        // Bug 2 fix: cancel headroom monitor.
+        headroomMonitorTasks[displayID]?.cancel()
+        headroomMonitorTasks.removeValue(forKey: displayID)
+
+        // Destroy boost overlay.
         if let overlay = boostOverlays.removeValue(forKey: displayID) {
             overlay.destroy()
-        }
-
-        // Restore gamma to defaults for THIS display only (pre-M5 path).
-        if !useMetalOverlay {
-            restoreGamma(for: displayID, baseline: baselineGamma[displayID])
         }
 
         // Destroy trigger.
@@ -550,39 +545,59 @@ final class XDRController {
         xdrActive[displayID] = false
     }
 
+    // MARK: - Headroom Monitor
+
+    /// Polls EDR headroom at 100 ms intervals while XDR is active.
+    /// If headroom unexpectedly drops below 1.05 (compositor collapsed it during an
+    /// app-focus or Space transition), re-orders both windows to the front so the
+    /// trigger re-asserts headroom before the user notices a brightness dip.
+    private func startHeadroomMonitor(for displayID: CGDirectDisplayID) {
+        headroomMonitorTasks[displayID]?.cancel()
+        let task = Task { @MainActor [weak self] in
+            while true {
+                guard let self, !Task.isCancelled else { return }
+                if self.xdrActive[displayID] == true,
+                   let screen = self.screen(for: displayID),
+                   screen.maximumExtendedDynamicRangeColorComponentValue < 1.05 {
+                    self.logger.debug("EDR headroom dipped for \(displayID) — re-asserting trigger")
+                    self.triggers[displayID]?.window.orderFrontRegardless()
+                    self.boostOverlays[displayID]?.window.orderFrontRegardless()
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        headroomMonitorTasks[displayID] = task
+    }
+
     // MARK: - Gamma Scaling
 
     /// Computes the gamma factor for a given XDR brightness level.
     /// At 1.0 → factor 1.0 (no scaling). Capped at 1.65x to prevent washed-out highlights.
     ///
-    /// Previous divisor of 2.0 gave factor 2.0 at max brightness, which doubled every pixel
-    /// and pushed midtones into EDR — everything looked blown out. Divisor 3.0 + a 1.65 cap
-    /// keeps highlights under the EDR ceiling and preserves color accuracy. Competitors
-    /// (Vivid, BetterDisplay) use similar ~1.5–1.7x limits.
-    static func edrGammaFactor(xdrBrightness: Float, maxEdr: CGFloat) -> Float {
-        let raw = 1.0 + (xdrBrightness - 1.0) * Float(maxEdr) / 3.0
+    /// The divisor equals `maxPotentialEdr` (the display's theoretical ceiling) so the
+    /// factor scales proportionally on future displays with higher potential EDR (e.g. 4.0).
+    /// The 1.65 cap prevents midtones from being pushed blown-out regardless of potential.
+    static func edrGammaFactor(xdrBrightness: Float, maxPotentialEdr: CGFloat) -> Float {
+        let divisor = max(Float(maxPotentialEdr), 1.0)
+        let raw = 1.0 + (xdrBrightness - 1.0) / divisor
         return min(raw, 1.65)
     }
 
     private func applyGammaScale(for displayID: CGDirectDisplayID, brightness: Float) {
+        guard let s = screen(for: displayID) else { return }
         // Use the CURRENT available EDR headroom (not the theoretical potential).
-        let maxEdr = screen(for: displayID)?
-            .maximumExtendedDynamicRangeColorComponentValue ?? 1.0
+        let maxEdr = s.maximumExtendedDynamicRangeColorComponentValue
 
-        // If EDR headroom isn't available, skip — applying gamma >1.0 without it clips white.
+        // If EDR headroom isn't available, skip — applying a >1.0 boost without it clips white.
         guard maxEdr > 1.05 else { return }
 
-        let factor = Self.edrGammaFactor(xdrBrightness: brightness, maxEdr: maxEdr)
+        // Pass the display's theoretical potential as the divisor so future high-EDR
+        // displays get a proportionally scaled factor rather than a fixed /3.0.
+        let maxPotentialEdr = s.maximumPotentialExtendedDynamicRangeColorComponentValue
+        let factor = Self.edrGammaFactor(xdrBrightness: brightness, maxPotentialEdr: maxPotentialEdr)
 
-        if useMetalOverlay {
-            // M5 path: update the full-screen multiply overlay factor.
-            boostOverlays[displayID]?.updateFactor(factor)
-        } else {
-            // Pre-M5 path: scale the gamma table.
-            guard let baseline = baselineGamma[displayID] else { return }
-            let scaled = baseline.scaled(by: factor)
-            scaled.apply(to: displayID)
-        }
+        // Update the full-screen multiply overlay factor.
+        boostOverlays[displayID]?.updateFactor(factor)
     }
 
     /// Applies brightness scaling, polling for EDR headroom only if not yet available.
@@ -613,6 +628,9 @@ final class XDRController {
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(50))
+                // Re-check after sleep: the cancelled task may have woken from sleep
+                // before the cancellation flag was observed.
+                if Task.isCancelled { return }
             }
             self.pendingGammaTasks.removeValue(forKey: displayID)
         }
@@ -622,7 +640,10 @@ final class XDRController {
     // MARK: - Screen Change
 
     private func handleScreenChange() {
-        for (displayID, trigger) in triggers {
+        // Collect IDs first — mutating a dictionary during for-in is undefined behavior.
+        let displayIDs = Array(triggers.keys)
+        for displayID in displayIDs {
+            guard let trigger = triggers[displayID] else { continue }
             guard let screen = screen(for: displayID) else {
                 // Display disconnected.
                 pendingGammaTasks[displayID]?.cancel()
@@ -632,10 +653,8 @@ final class XDRController {
                 if let overlay = boostOverlays.removeValue(forKey: displayID) {
                     overlay.destroy()
                 }
-                if !useMetalOverlay {
-                    restoreGamma(for: displayID, baseline: baselineGamma[displayID])
-                }
                 xdrActive[displayID] = false
+                lastSDRBrightness.removeValue(forKey: displayID)
                 continue
             }
             trigger.repositionOnScreen(screen)
