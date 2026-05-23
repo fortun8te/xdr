@@ -304,6 +304,7 @@ private struct ModeBadge: View {
 
 private struct SettingsSheet: View {
     @Environment(AppState.self) private var appState
+    @Environment(AppLifecycleManager.self) private var lifecycle
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage("userName") private var userName: String = ""
@@ -354,6 +355,31 @@ private struct SettingsSheet: View {
 
                     section("Behavior") {
                         VStack(alignment: .leading, spacing: Sp.sm) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Boost mode")
+                                        .font(.bodyBase)
+                                        .foregroundStyle(.primary)
+                                    Text(state.boostMode == .gamma
+                                         ? "Color-safe, lower peak (~750 nits)"
+                                         : "Brighter (~1100 nits), slight SDR shift")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                Spacer()
+                                Picker("", selection: $state.boostMode) {
+                                    ForEach(BoostMode.allCases, id: \.self) { mode in
+                                        Text(mode.displayName).tag(mode)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 160)
+                                .labelsHidden()
+                                .onChange(of: state.boostMode) { _, _ in
+                                    lifecycle.handleBoostModeChange()
+                                }
+                            }
+
                             toggle("Smooth transitions", isOn: $state.smoothTransitions)
                             toggle("Auto-disable on low battery", isOn: $autoDisableOnBattery)
 

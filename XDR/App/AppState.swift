@@ -13,7 +13,10 @@ final class AppState {
     // MARK: - Init
 
     init() {
-        UserDefaults.standard.register(defaults: ["smoothTransitions": true])
+        UserDefaults.standard.register(defaults: [
+            "smoothTransitions": true,
+            "boostMode": BoostMode.gamma.rawValue,
+        ])
     }
 
     // MARK: - Settings (persisted via UserDefaults)
@@ -29,6 +32,19 @@ final class AppState {
             return UserDefaults.standard.bool(forKey: "showNitsInMenuBar")
         }
         set { UserDefaults.standard.set(newValue, forKey: "showNitsInMenuBar") }
+    }
+
+    /// Boost mechanism for brightness > 1.0. See `BoostMode` for details.
+    /// When changed, the AppLifecycleManager re-asserts active brightness so the new
+    /// mode takes effect immediately (gamma table reset + overlay torn down or vice versa).
+    var boostMode: BoostMode {
+        get {
+            let raw = UserDefaults.standard.string(forKey: "boostMode") ?? BoostMode.gamma.rawValue
+            return BoostMode(rawValue: raw) ?? .gamma
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "boostMode")
+        }
     }
 
     // MARK: - Computed

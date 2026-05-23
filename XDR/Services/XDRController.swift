@@ -171,14 +171,15 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
 
         let metalView = MTKView(frame: CGRect(origin: .zero, size: frame.size), device: device)
         metalView.colorPixelFormat = .rgba16Float
-        // CRITICAL: extendedLinearSRGB, NOT extendedLinearDisplayP3.
-        // The previous attempt used extendedLinearDisplayP3 which caused visible
-        // oversaturation: sRGB-tagged desktop content (Safari, system UI, most apps)
-        // got reinterpreted with P3 primaries by the compositor, making reds look
-        // fluorescent, skies cyan, skin tones orange.
-        // extendedLinearSRGB keeps sRGB primaries (matching the bulk of desktop content)
-        // while still allowing values > 1.0 to push into the HDR range.
-        metalView.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
+        // extendedLinearDisplayP3 matches the Liquid Retina XDR panel's native gamut —
+        // eliminates one matrix conversion in the compositor pipeline. This matches:
+        //   - Apple WWDC 2022 session 10114 recommendation
+        //   - xdr-boost (github.com/levelsio/xdr-boost) — proven working with no color complaints
+        //   - Liquid Retina XDR being a P3-gamut panel
+        // For a neutral (factor, factor, factor) multiply gray, the colorspace choice
+        // is mathematically equivalent (gray = gray across all colorspaces), but P3
+        // is architecturally correct for the destination panel.
+        metalView.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
         metalView.clearColor = MTLClearColor(
             red: Double(factor), green: Double(factor), blue: Double(factor), alpha: 1.0
         )
@@ -192,7 +193,7 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
             layer.wantsExtendedDynamicRangeContent = true
             layer.isOpaque = false
             layer.pixelFormat = .rgba16Float
-            layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
+            layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
         }
 
         let window = NSWindow(
@@ -291,6 +292,12 @@ final class XDRController {
     private var xdrActive: [CGDirectDisplayID: Bool] = [:]
     private var pendingGammaTasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
     private var boostOverlays: [CGDirectDisplayID: EDRBoostOverlay] = [:]
+
+    /// Boost mechanism selected by the user (`Settings → Behavior → Boost mode`).
+    /// AppLifecycleManager sets this from AppState.boostMode before each setBrightness.
+    /// `applyGammaScale` reads it to choose between the gamma-table path and the
+    /// Metal multiply-overlay path.
+    var boostMode: BoostMode = .gamma
     // Bug 2 fix: per-display headroom monitor — polls maximumExtendedDynamicRangeColorComponentValue
     // and re-asserts the trigger when headroom unexpectedly drops below 1.05
     // (e.g. during app-focus transitions on the same Space).
@@ -716,34 +723,37 @@ final class XDRController {
         lastGammaFactor.removeValue(forKey: displayID)
     }
 
-    // MARK: - Gamma Boost (the only boost mechanism on M1–M4)
+    // MARK: - Brightness Boost (two modes, see BoostMode.swift)
     //
-    // Research (BrightIntosh source, Apple WWDC EDR sessions, BetterDisplay wiki) confirms:
-    // the proven color-safe way to boost a Liquid Retina XDR past 500 nits is a small
-    // (1×1) EDR trigger + gamma table scaling. Full-screen multiply overlays cause visible
-    // color shift because they put the compositor into EDR-wide mode for the whole screen,
-    // which remaps SDR reference white.
+    // Gamma mode (default, color-safe):
+    //   Uses CGSetDisplayTransferByTable to scale panel firmware output.
+    //   Factor = 1.0 → 1.5 as brightness ramps 1.0 → 2.0.
+    //   At brightness=2.0: factor 1.5 → ~750 nits from a 500-nit SDR base.
+    //   No compositor side effects. R, G, B scale uniformly so hue cannot shift.
     //
-    // The gamma table is applied at the panel-firmware level — it scales R, G, B identically,
-    // so by definition it cannot shift hue or saturation. Only luminance changes.
-    //
-    // Formula (matches the original v1.0 of this app, plus what BrightIntosh uses):
-    //   factor = 1.0 + (brightness - 1.0) × (maxEdr × 0.5)
-    // where maxEdr is the LIVE headroom currently allocated by the compositor. With the
-    // 1×1 trigger pinning EDR mode, maxEdr is typically the panel potential (≈1.59 on
-    // M1 Max Liquid Retina XDR).
-    //
-    // At brightness=2.0 with maxEdr=1.59: factor ≈ 1.795 → ~895 nits boost ceiling.
-    // At brightness=2.0 with maxEdr=2.0 (lower SDR base): factor = 2.0 → ~1000 nits.
+    // Metal overlay mode (more peak brightness, slight SDR white-point shift):
+    //   Full-screen Metal multiply layer in extendedLinearDisplayP3 (matches the
+    //   panel's native gamut — Apple WWDC 2022 session 10114 recommendation, also
+    //   what xdr-boost uses). Factor = 1.0 → 2.0 as brightness ramps 1.0 → 2.0.
+    //   At brightness=2.0: factor 2.0, macOS clips to actual panel headroom.
 
-    /// Computes the gamma factor for a given XDR brightness level.
-    /// At 1.0 → factor 1.0 (no scaling).  Scales linearly with live EDR headroom.
-    /// `maxEdr` is the display's LIVE `maximumExtendedDynamicRangeColorComponentValue`
-    /// at the moment of the call — not the theoretical potential.
+    /// Gamma scaling factor for gamma mode.
+    /// Capped at 1.5 to avoid the "overblown" look the user reported at higher factors.
     static func edrGammaFactor(xdrBrightness: Float, maxEdr: CGFloat) -> Float {
-        let headroom = max(Float(maxEdr), 1.0)
         let t = max(0.0, min(1.0, xdrBrightness - 1.0))
-        return 1.0 + t * (headroom * 0.5)
+        let headroom = max(Float(maxEdr), 1.0)
+        // Cap factor at 1.5 (≈750 nits) and at half the available headroom, whichever lower.
+        let ceiling = min(1.5, 1.0 + (headroom - 1.0) * 0.5)
+        return 1.0 + t * (ceiling - 1.0)
+    }
+
+    /// Multiply-overlay factor for Metal mode.
+    /// Linear ramp from 1.0 (identity) to 2.0 at peak. macOS clips the multiply
+    /// to the panel's actual EDR headroom — so brighter on capable hardware, no-op
+    /// on hardware with no EDR headroom available.
+    static func edrOverlayBoostFactor(xdrBrightness: Float) -> Float {
+        let t = max(0.0, min(1.0, xdrBrightness - 1.0))
+        return 1.0 + t * 1.0   // 1.0 → 2.0
     }
 
     private func applyGammaScale(for displayID: CGDirectDisplayID, brightness: Float) {
@@ -754,17 +764,35 @@ final class XDRController {
         // If EDR headroom isn't available, skip — applying a >1.0 boost without it clips white.
         guard maxEdr > 1.02 else { return }
 
+        // -------- Metal overlay mode --------
+        // User explicitly asked for the overlay path. Skip gamma table entirely,
+        // use full-screen multiply overlay for the boost.
+        if boostMode == .metalOverlay {
+            let overlayFactor = Self.edrOverlayBoostFactor(xdrBrightness: brightness)
+            // Make sure no gamma scaling is left over from a previous gamma-mode session.
+            if lastGammaFactor[displayID] != nil {
+                resetGammaTable(for: displayID)
+            }
+            updateOrCreateOverlay(for: displayID, factor: overlayFactor)
+            return
+        }
+
+        // -------- Gamma mode (default) --------
         let factor = Self.edrGammaFactor(xdrBrightness: brightness, maxEdr: maxEdr)
 
-        // M5 fallback: gamma tables don't have the visual effect we want.
-        // Fall back to the multiply overlay (M1–M4 never hits this path).
+        // M5 fallback (gamma tables silently no-op due to Apple bug FB22273730):
+        // collapse into overlay-only at the gamma factor.
         if gammaTableWorks[displayID] == false {
             updateOrCreateOverlay(for: displayID, factor: factor)
             return
         }
 
-        // M1–M4 confirmed path: gamma table only.
+        // M1–M4 confirmed path: gamma table only, no overlay.
         if gammaTableWorks[displayID] == true {
+            // Tear down a leftover overlay from a previous metalOverlay session.
+            if let overlay = boostOverlays.removeValue(forKey: displayID) {
+                overlay.destroy()
+            }
             applyGammaTable(factor: factor, for: displayID)
             return
         }

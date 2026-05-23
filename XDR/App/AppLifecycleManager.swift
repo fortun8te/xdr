@@ -228,6 +228,9 @@ final class AppLifecycleManager {
         let wasXDR = (xdrController.getBrightness(for: displayID) > XDRConstants.sdrMaxBrightness)
         let isXDR = (value > XDRConstants.sdrMaxBrightness)
 
+        // Push the latest user-selected mode through to the controller before each
+        // setBrightness so a toggle in Settings takes effect on the next slider movement.
+        xdrController.boostMode = appState?.boostMode ?? .gamma
         xdrController.setBrightness(value, for: displayID)
         sleepWakeManager.saveBrightness(value, for: displayID)
         sleepWakeManager.saveXDRActive(isXDR, for: displayID)
@@ -252,6 +255,21 @@ final class AppLifecycleManager {
         // Keep AppState in sync so the menu bar icon updates
         if let idx = appState?.displays.firstIndex(where: { $0.id == displayID }) {
             appState?.displays[idx].brightness = value
+        }
+    }
+
+    /// Called by the UI when the user toggles `Settings → Boost mode`.
+    /// Re-applies the current brightness for every display that's currently in XDR range,
+    /// which forces the new mode's code path (gamma vs overlay) to engage immediately
+    /// without the user having to nudge the slider.
+    func handleBoostModeChange() {
+        for display in displayManager.displays {
+            let current = xdrController.getBrightness(for: display.id)
+            guard current > XDRConstants.sdrMaxBrightness else { continue }
+            // setBrightness reads the latest boostMode from appState before delegating
+            // to the controller, so calling it with the same value re-routes through
+            // the new path. Calling with the same value avoids any animator transition.
+            setBrightness(current, for: display.id)
         }
     }
 
