@@ -718,32 +718,41 @@ final class XDRController {
 
     // MARK: - Combined Gamma + Overlay Boost
     //
-    // Total brightness boost on M1–M4 = gamma_factor × overlay_factor.
-    // The overlay does most of the lift (1.0 → 1.6), gamma is a slight supplement (1.0 → 1.2).
-    // Both apply the SAME uniform multiplier to R, G, B — so hue and saturation are preserved.
-    // Only the luminance changes.
+    // After testing the previous metal-primary approach (overlay 1.0 → 1.6, gamma 1.0 → 1.2),
+    // colors visibly shifted because the full-screen HDR-capable layer forces the macOS
+    // compositor into HDR mode for the entire screen — and HDR mode remaps SDR reference
+    // white to reserve luminance budget for highlights. That mode shift's color impact
+    // scales with how aggressively the overlay pushes (peak factor, not just presence).
     //
-    // Combined peak at brightness=2.0:  ~1.2 × 1.6 = 1.92x SDR (≈ 960 nits)
+    // Inverted ratio: gamma carries the bulk of the boost (panel-firmware level — no
+    // compositor mode shift), overlay is a small supplement for the very top of the range.
     //
-    // The overlay runs in extendedLinearSRGB (NOT extendedLinearDisplayP3) to avoid the
-    // sRGB → P3 reinterpretation that visibly oversaturated colors in the previous attempt.
+    //   gamma_factor:   1.0 → maxPotentialEdr (≈1.59 on M1 Max Liquid Retina XDR)
+    //   overlay_factor: 1.0 → 1.15
+    //   combined peak: ≈1.83x SDR (≈ 915 nits from a 500-nit base)
+    //
+    // The overlay runs in extendedLinearSRGB (not extendedLinearDisplayP3) so sRGB-tagged
+    // desktop content doesn't get reinterpreted as P3 (the original color-shift cause).
 
-    /// Gamma scaling factor — small supplement to the multiply overlay.
-    /// At brightness=1.0 → 1.0 (identity).  At brightness=2.0 → 1.2 (gentle).
-    /// Kept conservative on purpose: large gamma factors at the same time as a multiply
-    /// overlay risk crushing midtones (linear-light compounding).
+    /// Gamma scaling factor — primary brightness boost (firmware-level, no compositor side-effects).
+    /// At brightness=1.0 → 1.0 (identity).  At brightness=2.0 → maxPotentialEdr (≈1.59).
+    /// Linear ramp so the slider feels uniform.
     static func edrGammaFactor(xdrBrightness: Float, maxPotentialEdr: CGFloat) -> Float {
+        let ceiling = max(Float(maxPotentialEdr), 1.0)
         let t = max(0.0, min(1.0, xdrBrightness - 1.0))
-        return 1.0 + t * 0.2
+        return 1.0 + t * (ceiling - 1.0)
     }
 
-    /// Overlay multiply factor — the primary brightness boost mechanism.
-    /// At brightness=1.0 → 1.0 (identity multiply, invisible).
-    /// At brightness=2.0 → 1.6 (panel pushed into upper EDR range).
-    /// Ramp is linear so the slider feels uniform end-to-end.
+    /// Overlay multiply factor — small supplement to push past the panel headroom ceiling.
+    /// At brightness ≤ 1.5 → 1.0 (identity, invisible — overlay does nothing in lower half of XDR).
+    /// At brightness=2.0 → 1.15 (gentle push into the upper range).
+    /// Confined to the upper half of the slider so the compositor mode shift's visual cost
+    /// is paid only when the user actually wants peak brightness.
     static func edrOverlayFactor(xdrBrightness: Float) -> Float {
-        let t = max(0.0, min(1.0, xdrBrightness - 1.0))
-        return 1.0 + t * 0.6
+        let knee: Float = 1.5
+        guard xdrBrightness > knee else { return 1.0 }
+        let t = min(1.0, (xdrBrightness - knee) / (2.0 - knee))
+        return 1.0 + t * 0.15
     }
 
     private func applyGammaScale(for displayID: CGDirectDisplayID, brightness: Float) {
