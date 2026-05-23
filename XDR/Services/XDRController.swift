@@ -167,7 +167,14 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
 
         let metalView = MTKView(frame: CGRect(origin: .zero, size: frame.size), device: device)
         metalView.colorPixelFormat = .rgba16Float
-        metalView.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
+        // CRITICAL: extendedLinearSRGB, NOT extendedLinearDisplayP3.
+        // The previous attempt used extendedLinearDisplayP3 which caused visible
+        // oversaturation: sRGB-tagged desktop content (Safari, system UI, most apps)
+        // got reinterpreted with P3 primaries by the compositor, making reds look
+        // fluorescent, skies cyan, skin tones orange.
+        // extendedLinearSRGB keeps sRGB primaries (matching the bulk of desktop content)
+        // while still allowing values > 1.0 to push into the HDR range.
+        metalView.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
         metalView.clearColor = MTLClearColor(
             red: Double(factor), green: Double(factor), blue: Double(factor), alpha: 1.0
         )
@@ -181,7 +188,7 @@ private final class EDRBoostOverlay: NSObject, MTKViewDelegate {
             layer.wantsExtendedDynamicRangeContent = true
             layer.isOpaque = false
             layer.pixelFormat = .rgba16Float
-            layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
+            layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
         }
 
         let window = NSWindow(
@@ -519,9 +526,15 @@ final class XDRController {
             }
         }
 
-        // NOTE: The boost overlay is NOT created here. `applyGammaScale` (called from
-        // `applyGammaWhenReady` once headroom is confirmed) decides whether gamma tables
-        // work for this display. Only if they don't (M5 fallback) does it create the overlay.
+        // Pre-create the boost overlay at factor 1.0 (identity multiply = invisible).
+        // The full-screen Metal layer being present causes a compositor mode shift that
+        // we want to commit to BEFORE any visible boost — otherwise the first time we
+        // ramp the overlay above 1.0 the user sees a one-frame discontinuity as the
+        // compositor switches into HDR composition mode. Creating it at identity at
+        // activation time hides that transition behind the slider crossing 1.0.
+        if boostOverlays[displayID] == nil, let screen = screen(for: displayID) {
+            boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: 1.0)
+        }
 
         xdrActive[displayID] = true
 
@@ -545,10 +558,12 @@ final class XDRController {
         // Reset gamma table to identity (removes any brightness boost).
         resetGammaTable(for: displayID)
 
-        // Destroy boost overlay if present (M5 fallback path only).
-        if let overlay = boostOverlays.removeValue(forKey: displayID) {
-            overlay.destroy()
-        }
+        // Keep the overlay alive but set to identity multiply (factor 1.0, invisible).
+        // Destroying here would force the compositor to switch back out of HDR composition
+        // mode, which can cause a one-frame discontinuity. Keeping it alive at identity
+        // means crossing the 1.0 boundary in either direction is smooth. The overlay only
+        // gets destroyed in shutdown() or when the display disconnects.
+        boostOverlays[displayID]?.updateFactor(1.0)
 
         // Keep the trigger alive. Tearing it down here means the next time the user
         // toggles XDR on, the compositor needs ~50-150ms to re-allocate headroom,
@@ -701,18 +716,34 @@ final class XDRController {
         lastGammaFactor.removeValue(forKey: displayID)
     }
 
-    // MARK: - Gamma Scaling
+    // MARK: - Combined Gamma + Overlay Boost
+    //
+    // Total brightness boost on M1–M4 = gamma_factor × overlay_factor.
+    // The overlay does most of the lift (1.0 → 1.6), gamma is a slight supplement (1.0 → 1.2).
+    // Both apply the SAME uniform multiplier to R, G, B — so hue and saturation are preserved.
+    // Only the luminance changes.
+    //
+    // Combined peak at brightness=2.0:  ~1.2 × 1.6 = 1.92x SDR (≈ 960 nits)
+    //
+    // The overlay runs in extendedLinearSRGB (NOT extendedLinearDisplayP3) to avoid the
+    // sRGB → P3 reinterpretation that visibly oversaturated colors in the previous attempt.
 
-    /// Computes the gamma factor for a given XDR brightness level.
-    /// At 1.0 → factor 1.0 (no scaling). Capped at 1.65x to prevent washed-out highlights.
-    ///
-    /// The divisor equals `maxPotentialEdr` (the display's theoretical ceiling) so the
-    /// factor scales proportionally on future displays with higher potential EDR (e.g. 4.0).
-    /// The 1.65 cap prevents midtones from being pushed blown-out regardless of potential.
+    /// Gamma scaling factor — small supplement to the multiply overlay.
+    /// At brightness=1.0 → 1.0 (identity).  At brightness=2.0 → 1.2 (gentle).
+    /// Kept conservative on purpose: large gamma factors at the same time as a multiply
+    /// overlay risk crushing midtones (linear-light compounding).
     static func edrGammaFactor(xdrBrightness: Float, maxPotentialEdr: CGFloat) -> Float {
-        let divisor = max(Float(maxPotentialEdr), 1.0)
-        let raw = 1.0 + (xdrBrightness - 1.0) / divisor
-        return min(raw, 1.65)
+        let t = max(0.0, min(1.0, xdrBrightness - 1.0))
+        return 1.0 + t * 0.2
+    }
+
+    /// Overlay multiply factor — the primary brightness boost mechanism.
+    /// At brightness=1.0 → 1.0 (identity multiply, invisible).
+    /// At brightness=2.0 → 1.6 (panel pushed into upper EDR range).
+    /// Ramp is linear so the slider feels uniform end-to-end.
+    static func edrOverlayFactor(xdrBrightness: Float) -> Float {
+        let t = max(0.0, min(1.0, xdrBrightness - 1.0))
+        return 1.0 + t * 0.6
     }
 
     private func applyGammaScale(for displayID: CGDirectDisplayID, brightness: Float) {
@@ -721,51 +752,42 @@ final class XDRController {
         let maxEdr = s.maximumExtendedDynamicRangeColorComponentValue
 
         // If EDR headroom isn't available, skip — applying a >1.0 boost without it clips white.
-        guard maxEdr > 1.05 else { return }
+        // Threshold matches the headroom monitor (1.02): both must agree on what "headroom present" means.
+        guard maxEdr > 1.02 else { return }
 
-        // Pass the display's theoretical potential as the divisor so future high-EDR
-        // displays get a proportionally scaled factor rather than a fixed /3.0.
         let maxPotentialEdr = s.maximumPotentialExtendedDynamicRangeColorComponentValue
-        let factor = Self.edrGammaFactor(xdrBrightness: brightness, maxPotentialEdr: maxPotentialEdr)
+        let gammaFactor = Self.edrGammaFactor(xdrBrightness: brightness, maxPotentialEdr: maxPotentialEdr)
+        let overlayFactor = Self.edrOverlayFactor(xdrBrightness: brightness)
 
-        // Gamma-table path (M1–M4): apply the gamma ramp directly to the display.
-        // If gamma tables are already known to work for this display, use them and return.
-        if gammaTableWorks[displayID] == true {
-            applyGammaTable(factor: factor, for: displayID)
-            return
-        }
-
-        // M5 fallback: gamma tables are known NOT to work for this display.
-        // Update the overlay factor instead.
+        // M5 fallback: gamma tables don't work. Overlay alone carries the combined boost.
         if gammaTableWorks[displayID] == false {
-            if boostOverlays[displayID] == nil, let screen = screen(for: displayID) {
-                boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: factor)
-            } else {
-                boostOverlays[displayID]?.updateFactor(factor)
-            }
+            updateOrCreateOverlay(for: displayID, factor: gammaFactor * overlayFactor)
             return
         }
 
-        // First activation for this display: gammaTableWorks is nil.
-        // Apply the gamma table now; schedule an async check 500 ms later to see if it
-        // had the expected visual effect (headroom stays elevated, i.e. gamma worked).
-        let apiSuccess = applyGammaTable(factor: factor, for: displayID)
+        // M1–M4 (confirmed): apply gamma + overlay together.
+        // The overlay is pre-created in activateXDR at factor 1.0 (identity, invisible),
+        // so updateFactor here just smoothly varies its brightness contribution.
+        if gammaTableWorks[displayID] == true {
+            applyGammaTable(factor: gammaFactor, for: displayID)
+            boostOverlays[displayID]?.updateFactor(overlayFactor)
+            return
+        }
+
+        // First activation: verify gamma works before committing to the combined path.
+        let apiSuccess = applyGammaTable(factor: gammaFactor, for: displayID)
         if !apiSuccess {
-            // CGSetDisplayTransferByTable returned an error — skip gamma, go straight to overlay.
-            logger.warning("CGSetDisplayTransferByTable failed for display \(displayID) — using overlay fallback")
+            logger.warning("CGSetDisplayTransferByTable failed for display \(displayID) — using overlay-only fallback")
             gammaTableWorks[displayID] = false
-            if boostOverlays[displayID] == nil, let screen = screen(for: displayID) {
-                boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: factor)
-            }
+            updateOrCreateOverlay(for: displayID, factor: gammaFactor * overlayFactor)
             return
         }
+        // Apply overlay too, then verify gamma below.
+        boostOverlays[displayID]?.updateFactor(overlayFactor)
 
-        // Gamma API returned success. Verify visually after 500 ms.
-        // On M1–M4 the gamma boost will have pushed EDR headroom higher; on M5 it stays
-        // close to the baseline value the trigger allocated (≈ panel potential, not scaled).
-        // We compare against the pre-boost headroom reading we just took above.
+        // Gamma API returned success. Verify visually after 500 ms that the panel firmware
+        // actually responded (M5 silently no-ops but reports success).
         let baselineHeadroom = maxEdr
-        let capturedFactor = factor
         Task { @MainActor [weak self] in
             guard let self else { return }
             try? await Task.sleep(for: .milliseconds(500))
@@ -773,44 +795,40 @@ final class XDRController {
                   self.xdrActive[displayID] == true,
                   let screen = self.screen(for: displayID) else { return }
 
-            // On M1–M4 the gamma ramp scales output linearly, which does NOT change what
-            // maximumExtendedDynamicRangeColorComponentValue reports (that's a compositor
-            // allocation, not a measurement of actual pixel brightness). Instead we verify
-            // by checking that the gamma table call succeeded AND that headroom has not
-            // dropped below the baseline we measured before the call — if something went
-            // wrong (e.g. the table was silently ignored) headroom tends to snap back to 1.0.
             let currentHeadroom = screen.maximumExtendedDynamicRangeColorComponentValue
             let gammaEffective = currentHeadroom >= (baselineHeadroom - 0.05)
 
             if gammaEffective {
-                self.logger.info("Gamma table verified effective for display \(displayID) — using gamma path")
+                self.logger.info("Gamma table verified — using gamma + overlay path for display \(displayID)")
                 self.gammaTableWorks[displayID] = true
-                // Re-apply with the current stored brightness in case it changed while we waited.
                 if let stored = self.brightness[displayID], stored > 1.0 {
-                    let newFactor = Self.edrGammaFactor(
+                    self.applyGammaScale(for: displayID, brightness: Float(stored))
+                }
+            } else {
+                self.logger.warning("Gamma table ineffective for display \(displayID) — collapsing into overlay-only")
+                self.gammaTableWorks[displayID] = false
+                self.resetGammaTable(for: displayID)
+                if let stored = self.brightness[displayID], stored > 1.0 {
+                    let g = Self.edrGammaFactor(
                         xdrBrightness: Float(stored),
                         maxPotentialEdr: screen.maximumPotentialExtendedDynamicRangeColorComponentValue
                     )
-                    self.applyGammaTable(factor: newFactor, for: displayID)
-                }
-            } else {
-                self.logger.warning("Gamma table ineffective for display \(displayID) (headroom \(currentHeadroom) < baseline \(baselineHeadroom)) — falling back to overlay")
-                self.gammaTableWorks[displayID] = false
-                // Reset the gamma table (it was doing nothing useful) and create the overlay.
-                self.resetGammaTable(for: displayID)
-                if self.boostOverlays[displayID] == nil, let screen = self.screen(for: displayID) {
-                    if let stored = self.brightness[displayID], stored > 1.0 {
-                        let newFactor = Self.edrGammaFactor(
-                            xdrBrightness: Float(stored),
-                            maxPotentialEdr: screen.maximumPotentialExtendedDynamicRangeColorComponentValue
-                        )
-                        self.boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: newFactor)
-                    } else {
-                        self.boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: capturedFactor)
-                    }
+                    let o = Self.edrOverlayFactor(xdrBrightness: Float(stored))
+                    self.updateOrCreateOverlay(for: displayID, factor: g * o)
                 }
             }
         }
+    }
+
+    /// Creates or updates the EDR boost overlay window for a display.
+    /// Reuses an existing overlay if present (avoids destroy/recreate blinks).
+    private func updateOrCreateOverlay(for displayID: CGDirectDisplayID, factor: Float) {
+        if let overlay = boostOverlays[displayID] {
+            overlay.updateFactor(factor)
+            return
+        }
+        guard let screen = screen(for: displayID) else { return }
+        boostOverlays[displayID] = EDRBoostOverlay(for: screen, factor: factor)
     }
 
     /// Applies brightness scaling, polling for EDR headroom only if not yet available.
