@@ -73,7 +73,8 @@ final class SetBrightnessCommand: NSScriptCommand {
             }
 
             let displayID = CGMainDisplayID()
-            let maxNits = manager.xdrController.isXDRCapable(displayID: displayID) ? 1600 : 500
+            let perDisplayMaxNits = AppLifecycleManager.shared?.displayManager.display(for: displayID)?.maxNits ?? 1600
+            let maxNits = perDisplayMaxNits
 
             if nits > maxNits {
                 self.scriptErrorNumber = errOSAGeneralError
@@ -84,7 +85,7 @@ final class SetBrightnessCommand: NSScriptCommand {
             }
 
             let clampedNits = max(0, min(nits, maxNits))
-            let unified = manager.xdrController.brightnessFromNits(Double(clampedNits))
+            let unified = manager.xdrController.brightnessFromNits(Double(clampedNits), maxNits: maxNits)
             manager.setBrightness(unified, for: displayID)
 
             return nil as Any?
@@ -105,7 +106,8 @@ final class GetBrightnessCommand: NSScriptCommand {
             }
 
             let displayID = CGMainDisplayID()
-            return manager.xdrController.currentNits(for: displayID) as Any?
+            let maxNits = AppLifecycleManager.shared?.displayManager.display(for: displayID)?.maxNits ?? 1600
+            return manager.xdrController.currentNits(for: displayID, maxNits: maxNits) as Any?
         }
     }
 }

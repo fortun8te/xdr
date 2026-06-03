@@ -20,23 +20,40 @@
 		37A719CF780193E2FF5E06E5 /* BatteryMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2E47B516ED9D2DEC20D66D /* BatteryMonitor.swift */; };
 		3C0965A6025BAFD980CA4F93 /* XDR.sdef in Resources */ = {isa = PBXBuildFile; fileRef = 3BC0DE212A5711EA4C22B123 /* XDR.sdef */; };
 		4137BD63BAB888754C1FC2C7 /* DisplayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F90944170E8DEA57C0B236 /* DisplayInfo.swift */; };
+		42E756A31FC4277D99930A80 /* SoftwareDimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D3E36CBF5FCB3C6410843C /* SoftwareDimmer.swift */; };
 		473507DEE6F80066B1EE9AE6 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8774FAF254D06A365E7E02EE /* AppState.swift */; };
 		5E762AB9ED244CABEE0E4CA9 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B899D9DCE84104A7CBE0B1E /* Constants.swift */; };
 		6C0D11CC3D6FB4FAC1EB3C52 /* MenuBarIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D237810F3B1AB36F5BA20BB /* MenuBarIconView.swift */; };
+		7139B0D139512341D8761EAF /* DimSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BC2C2D661FD42069D3F48D1 /* DimSlider.swift */; };
 		7E53C3464C1B95E692E80DB2 /* BrightnessPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28E86CA808DFC7BFDBB58724 /* BrightnessPreset.swift */; };
 		84FD840E7DF46AF366CD17BF /* BoostMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21514316FC243AA3BE7A4AF /* BoostMode.swift */; };
+		867B942760DC645A43A75F4C /* XDRControllerStaticTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279B75B462F1F967697E6EFE /* XDRControllerStaticTests.swift */; };
 		89FF0E1EF25343CB67CABDA6 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 336DABD1BCF4C87CA4CC9F28 /* KeyboardShortcuts */; };
 		9B508C85432756479D940949 /* XDRController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1950549E628E002A8304F0F2 /* XDRController.swift */; };
+		9E72005E9BE39F605A1906A8 /* BrightnessSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34703C71A208BAAF803ACA7C /* BrightnessSupport.swift */; };
 		AFDA17D95B5846FDFB6B45E5 /* SleepWakeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FDA6EBDB731151A7CC777B7 /* SleepWakeManager.swift */; };
 		B6E49B740C0B6AA5A5F9AE96 /* AppIntentsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE20041DE2FBA70CAE821E3 /* AppIntentsProvider.swift */; };
 		C3E06EAD1AA2E36AE561658C /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E828CC752F278A5ED9C791A /* Typography.swift */; };
+		CCC65157447C8069DD92CD0D /* XDRConstantsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E256520DDEC2AB789E07DC1 /* XDRConstantsTests.swift */; };
 		D0C1ED378C60ABA5215C4FC0 /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C407138E149A1B0A35AEA314 /* PermissionsView.swift */; };
+		D7F5DA777E24A1E07E6C6106 /* DisplayCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E099BCFFD8945464C66741F8 /* DisplayCard.swift */; };
 		E0AEA9B772948882AD78F06F /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1472DD96F026FD10691877B1 /* Spacing.swift */; };
+		E0F926D74F493367D099E735 /* SoftwareDimmerMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732C163B07C2516F63D2E33D /* SoftwareDimmerMathTests.swift */; };
 		EAD0D8507FA66A57EB2DF8C2 /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F560212FCC32EE70CDCA078C /* Color+Theme.swift */; };
 		EE97EAF435117802E0611023 /* XDRApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D0460427007C16B8C7C331 /* XDRApp.swift */; };
 		EF7263BCE33675523835C27F /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4604E0EC82B489930AEBE03A /* DisplayManager.swift */; };
 		FF681BD890BCB6A4CB293145 /* PopoverContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A3BF2A9056D44CA6421AC26 /* PopoverContentView.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1E4AFF8211FC1E1ACAD1D28D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C81A5EF6AAB1987BAD71BFFD /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 41014716AAC23FCC5E773115;
+			remoteInfo = XDR;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		0CDDA49B5489A0ED675D1E7F /* XDRBoostMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XDRBoostMeter.swift; sourceTree = "<group>"; };
@@ -47,7 +64,10 @@
 		1CAF87381A90380712D93195 /* AppShellBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellBackground.swift; sourceTree = "<group>"; };
 		1E828CC752F278A5ED9C791A /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		231B9B79F504E1823EA23CBF /* ScriptingCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptingCommands.swift; sourceTree = "<group>"; };
+		279B75B462F1F967697E6EFE /* XDRControllerStaticTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XDRControllerStaticTests.swift; sourceTree = "<group>"; };
 		28E86CA808DFC7BFDBB58724 /* BrightnessPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessPreset.swift; sourceTree = "<group>"; };
+		2BC2C2D661FD42069D3F48D1 /* DimSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimSlider.swift; sourceTree = "<group>"; };
+		34703C71A208BAAF803ACA7C /* BrightnessSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessSupport.swift; sourceTree = "<group>"; };
 		3676A36619E924708A1B6C69 /* KeyboardShortcutNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutNames.swift; sourceTree = "<group>"; };
 		3A3BF2A9056D44CA6421AC26 /* PopoverContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverContentView.swift; sourceTree = "<group>"; };
 		3B899D9DCE84104A7CBE0B1E /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
@@ -57,9 +77,12 @@
 		4EE20041DE2FBA70CAE821E3 /* AppIntentsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentsProvider.swift; sourceTree = "<group>"; };
 		5A15109A7865267A6A1594DA /* PermissionsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsService.swift; sourceTree = "<group>"; };
 		6A1CB907B41F85F5135C6027 /* XDR.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XDR.entitlements; sourceTree = "<group>"; };
+		6F9AA2FA8F32145B540B088E /* XDRTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XDRTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		732C163B07C2516F63D2E33D /* SoftwareDimmerMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareDimmerMathTests.swift; sourceTree = "<group>"; };
 		7D237810F3B1AB36F5BA20BB /* MenuBarIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIconView.swift; sourceTree = "<group>"; };
 		80D0460427007C16B8C7C331 /* XDRApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XDRApp.swift; sourceTree = "<group>"; };
 		8774FAF254D06A365E7E02EE /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		8E256520DDEC2AB789E07DC1 /* XDRConstantsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XDRConstantsTests.swift; sourceTree = "<group>"; };
 		8FDA6EBDB731151A7CC777B7 /* SleepWakeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeManager.swift; sourceTree = "<group>"; };
 		905B2F4F82E2798CF76C4441 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		ABAEA8EF801787B09F7CB7E4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -67,6 +90,8 @@
 		C407138E149A1B0A35AEA314 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		CA2E47B516ED9D2DEC20D66D /* BatteryMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryMonitor.swift; sourceTree = "<group>"; };
 		D6F90944170E8DEA57C0B236 /* DisplayInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayInfo.swift; sourceTree = "<group>"; };
+		E099BCFFD8945464C66741F8 /* DisplayCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayCard.swift; sourceTree = "<group>"; };
+		E1D3E36CBF5FCB3C6410843C /* SoftwareDimmer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareDimmer.swift; sourceTree = "<group>"; };
 		F21514316FC243AA3BE7A4AF /* BoostMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoostMode.swift; sourceTree = "<group>"; };
 		F560212FCC32EE70CDCA078C /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -87,6 +112,8 @@
 		033BDD2D5E4AAB1252DD7332 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				2BC2C2D661FD42069D3F48D1 /* DimSlider.swift */,
+				E099BCFFD8945464C66741F8 /* DisplayCard.swift */,
 				905B2F4F82E2798CF76C4441 /* MainWindowView.swift */,
 				7D237810F3B1AB36F5BA20BB /* MenuBarIconView.swift */,
 				C407138E149A1B0A35AEA314 /* PermissionsView.swift */,
@@ -139,6 +166,7 @@
 				5A15109A7865267A6A1594DA /* PermissionsService.swift */,
 				231B9B79F504E1823EA23CBF /* ScriptingCommands.swift */,
 				8FDA6EBDB731151A7CC777B7 /* SleepWakeManager.swift */,
+				E1D3E36CBF5FCB3C6410843C /* SoftwareDimmer.swift */,
 				1950549E628E002A8304F0F2 /* XDRController.swift */,
 			);
 			path = Services;
@@ -147,6 +175,7 @@
 		90B33DD56E951E27615859B8 = {
 			isa = PBXGroup;
 			children = (
+				DF1DFDC2DB9A4E233CD069E2 /* Tests */,
 				48FAEB726A82581A5C618486 /* XDR */,
 				ED09392C6E43EA27D1D4AA54 /* Products */,
 			);
@@ -165,6 +194,7 @@
 		A50D6D231D458A4AB0361637 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
+				34703C71A208BAAF803ACA7C /* BrightnessSupport.swift */,
 				3B899D9DCE84104A7CBE0B1E /* Constants.swift */,
 				3676A36619E924708A1B6C69 /* KeyboardShortcutNames.swift */,
 			);
@@ -192,10 +222,21 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		DF1DFDC2DB9A4E233CD069E2 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				732C163B07C2516F63D2E33D /* SoftwareDimmerMathTests.swift */,
+				8E256520DDEC2AB789E07DC1 /* XDRConstantsTests.swift */,
+				279B75B462F1F967697E6EFE /* XDRControllerStaticTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
 		ED09392C6E43EA27D1D4AA54 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				1A7FB7DE57909519DE48335B /* XDR.app */,
+				6F9AA2FA8F32145B540B088E /* XDRTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -224,6 +265,24 @@
 			productReference = 1A7FB7DE57909519DE48335B /* XDR.app */;
 			productType = "com.apple.product-type.application";
 		};
+		5C264EF3E9449C9A26E871F0 /* XDRTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D5691D846DB09881321BEB60 /* Build configuration list for PBXNativeTarget "XDRTests" */;
+			buildPhases = (
+				772EFD07CCD92009E7ED321D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8B05BEF5568C8BBB62D0DEE6 /* PBXTargetDependency */,
+			);
+			name = XDRTests;
+			packageProductDependencies = (
+			);
+			productName = XDRTests;
+			productReference = 6F9AA2FA8F32145B540B088E /* XDRTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -234,6 +293,9 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					41014716AAC23FCC5E773115 = {
+						ProvisioningStyle = Automatic;
+					};
+					5C264EF3E9449C9A26E871F0 = {
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -257,6 +319,7 @@
 			projectRoot = "";
 			targets = (
 				41014716AAC23FCC5E773115 /* XDR */,
+				5C264EF3E9449C9A26E871F0 /* XDRTests */,
 			);
 		};
 /* End PBXProject section */
@@ -285,8 +348,11 @@
 				37A719CF780193E2FF5E06E5 /* BatteryMonitor.swift in Sources */,
 				84FD840E7DF46AF366CD17BF /* BoostMode.swift in Sources */,
 				7E53C3464C1B95E692E80DB2 /* BrightnessPreset.swift in Sources */,
+				9E72005E9BE39F605A1906A8 /* BrightnessSupport.swift in Sources */,
 				EAD0D8507FA66A57EB2DF8C2 /* Color+Theme.swift in Sources */,
 				5E762AB9ED244CABEE0E4CA9 /* Constants.swift in Sources */,
+				7139B0D139512341D8761EAF /* DimSlider.swift in Sources */,
+				D7F5DA777E24A1E07E6C6106 /* DisplayCard.swift in Sources */,
 				4137BD63BAB888754C1FC2C7 /* DisplayInfo.swift in Sources */,
 				EF7263BCE33675523835C27F /* DisplayManager.swift in Sources */,
 				2BB5B62F748960324ED8925A /* KeyboardShortcutNames.swift in Sources */,
@@ -298,6 +364,7 @@
 				FF681BD890BCB6A4CB293145 /* PopoverContentView.swift in Sources */,
 				036E49C52C337284ABFE968F /* ScriptingCommands.swift in Sources */,
 				AFDA17D95B5846FDFB6B45E5 /* SleepWakeManager.swift in Sources */,
+				42E756A31FC4277D99930A80 /* SoftwareDimmer.swift in Sources */,
 				E0AEA9B772948882AD78F06F /* Spacing.swift in Sources */,
 				C3E06EAD1AA2E36AE561658C /* Typography.swift in Sources */,
 				EE97EAF435117802E0611023 /* XDRApp.swift in Sources */,
@@ -306,7 +373,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		772EFD07CCD92009E7ED321D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E0F926D74F493367D099E735 /* SoftwareDimmerMathTests.swift in Sources */,
+				CCC65157447C8069DD92CD0D /* XDRConstantsTests.swift in Sources */,
+				867B942760DC645A43A75F4C /* XDRControllerStaticTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		8B05BEF5568C8BBB62D0DEE6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 41014716AAC23FCC5E773115 /* XDR */;
+			targetProxy = 1E4AFF8211FC1E1ACAD1D28D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1948397DA553A8D407C384CD /* Release */ = {
@@ -449,6 +534,44 @@
 			};
 			name = Release;
 		};
+		46F0640CAD503D9FDB485FF4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xdr.XDRTests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XDR.app/Contents/MacOS/XDR";
+			};
+			name = Debug;
+		};
+		50FC51B52AC01F85F75C4FA4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xdr.XDRTests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XDR.app/Contents/MacOS/XDR";
+			};
+			name = Release;
+		};
 		75B6C9709F81CD746BFFF75A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -470,6 +593,15 @@
 			buildConfigurations = (
 				75B6C9709F81CD746BFFF75A /* Debug */,
 				1948397DA553A8D407C384CD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D5691D846DB09881321BEB60 /* Build configuration list for PBXNativeTarget "XDRTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				46F0640CAD503D9FDB485FF4 /* Debug */,
+				50FC51B52AC01F85F75C4FA4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

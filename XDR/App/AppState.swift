@@ -26,7 +26,9 @@ final class AppState {
         set { UserDefaults.standard.set(newValue, forKey: "smoothTransitions") }
     }
 
-    var showNitsInMenuBar: Bool {
+    /// Whether the menu bar shows the numeric brightness level (0–10) next to the icon.
+    /// UserDefaults key is kept as "showNitsInMenuBar" for settings continuity.
+    var showLevelInMenuBar: Bool {
         get {
             guard UserDefaults.standard.object(forKey: "showNitsInMenuBar") != nil else { return true }
             return UserDefaults.standard.bool(forKey: "showNitsInMenuBar")
@@ -59,7 +61,7 @@ final class AppState {
 
     // MARK: - Formatting
 
-    func nitsForBrightness(_ brightness: Double, maxNits: Int) -> Int {
-        XDRConstants.nits(forBrightness: brightness, maxNits: maxNits)
+    func levelForBrightness(_ brightness: Double) -> Double {
+        XDRConstants.level(forBrightness: brightness)
     }
 }

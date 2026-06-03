@@ -18,14 +18,6 @@ import SwiftUI
 import LaunchAtLogin
 import KeyboardShortcuts
 
-// MARK: - Cached formatters
-
-private let nitsFormatter: NumberFormatter = {
-    let f = NumberFormatter()
-    f.numberStyle = .decimal
-    return f
-}()
-
 struct PopoverContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(AppLifecycleManager.self) private var lifecycle
@@ -139,7 +131,9 @@ struct PopoverContentView: View {
                 .padding(.vertical, Sp.md)
             } else {
                 ForEach(appState.displays) { display in
-                    PopoverDisplayCard(display: display)
+                    DisplayCard(display: display,
+                                onSet: { lifecycle.setBrightness($0, for: display.id) },
+                                surface: .popover)
                 }
             }
         }
@@ -176,7 +170,7 @@ struct PopoverContentView: View {
                     Spacer()
                 }
                 HStack {
-                    Toggle("Show nits in menu bar", isOn: $state.showNitsInMenuBar)
+                    Toggle("Show level in menu bar", isOn: $state.showLevelInMenuBar)
                         .font(.subheadline)
                         .toggleStyle(.switch)
                         .controlSize(.small)
@@ -188,6 +182,23 @@ struct PopoverContentView: View {
                         .toggleStyle(.switch)
                         .controlSize(.small)
                     Spacer()
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Boost mode")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $state.boostMode) {
+                        ForEach(BoostMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .onChange(of: state.boostMode) { _, _ in
+                        lifecycle.handleBoostModeChange()
+                    }
                 }
 
                 if autoDisable {
@@ -223,115 +234,6 @@ struct PopoverContentView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Popover Display Card
-//
-// Compact display card scoped to the popover. Mirrors MainWindowView's
-// DisplayCard but lives here so the popover can ship without depending on
-// types declared `private` inside MainWindowView.
-
-private struct PopoverDisplayCard: View {
-    let display: DisplayInfo
-
-    @Environment(AppState.self) private var appState
-    @Environment(AppLifecycleManager.self) private var lifecycle
-    @Environment(\.colorScheme) private var scheme
-
-    private var headerIcon: String {
-        display.isBuiltIn ? "display" : "display.2"
-    }
-
-    private var subtitle: String {
-        switch (display.isBuiltIn, display.isXDR) {
-        case (true,  true):  return "Liquid Retina XDR"
-        case (true,  false): return "Built-in Display"
-        case (false, true):  return "Pro Display XDR"
-        case (false, false): return "External Display"
-        }
-    }
-
-    private var nitsString: String {
-        let n = appState.nitsForBrightness(display.brightness, maxNits: display.maxNits)
-        return nitsFormatter.string(from: NSNumber(value: n)) ?? "\(n)"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Sp.sm) {
-            HStack(alignment: .top, spacing: Sp.sm) {
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Image(systemName: headerIcon)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(.secondary)
-                        Text(display.name)
-                            .font(.bodyMedium)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    Text(subtitle)
-                        .font(.bodySmall)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(nitsString)
-                            .font(.serif(20, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .contentTransition(.numericText())
-                        Text("nits")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                    }
-                    PopoverModeBadge(isXDRActive: display.brightness > 1.0 && display.isXDR)
-                }
-            }
-
-            XDRBoostMeter(
-                brightness: display.brightness,
-                isXDR: display.isXDR,
-                onSet: { newValue in
-                    lifecycle.setBrightness(newValue, for: display.id)
-                }
-            )
-        }
-        .padding(Sp.sm)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: CardShape.corner)
-                .fill(scheme == .dark
-                    ? Color.white.opacity(0.05)
-                    : Color.black.opacity(0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CardShape.corner)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: CardShape.borderUnselected)
-        )
-    }
-}
-
-// MARK: - Mode badge (popover-scoped)
-
-private struct PopoverModeBadge: View {
-    let isXDRActive: Bool
-
-    var body: some View {
-        Text(isXDRActive ? "XDR" : "SDR")
-            .font(.system(size: 9, weight: .semibold))
-            .tracking(0.5)
-            .foregroundStyle(isXDRActive ? Color.xdrAmber : Color.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(
-                (isXDRActive ? Color.xdrAmber : Color.secondary).opacity(0.14),
-                in: Capsule()
-            )
     }
 }
 

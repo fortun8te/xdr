@@ -47,3 +47,40 @@ targets:
         OSAScriptingDefinition: XDR.sdef
         CFBundleName: XDR
         NSHumanReadableCopyright: "Copyright © 2024 XDR. All rights reserved."
+
+  XDRTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+    settings:
+      base:
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        SWIFT_VERSION: "5.10"
+        # Hosted test bundle: the XDR app is the test host. Required because the
+        # XDR module transitively uses SwiftUI, and a host-less bundle is not an
+        # allowed client of SwiftUICore. @testable import XDR resolves via BUNDLE_LOADER.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/XDR.app/Contents/MacOS/XDR"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: XDR
+
+schemes:
+  XDR:
+    build:
+      targets:
+        XDR: all
+        XDRTests: [testing]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - XDRTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

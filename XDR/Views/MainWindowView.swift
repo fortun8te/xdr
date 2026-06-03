@@ -22,14 +22,6 @@ import AppKit
 import KeyboardShortcuts
 import LaunchAtLogin
 
-// MARK: - Cached formatters
-
-private let nitsFormatter: NumberFormatter = {
-    let f = NumberFormatter()
-    f.numberStyle = .decimal
-    return f
-}()
-
 // MARK: - Root view
 
 struct MainWindowView: View {
@@ -58,7 +50,9 @@ struct MainWindowView: View {
                 } else {
                     VStack(spacing: Sp.sm) {
                         ForEach(appState.displays) { display in
-                            DisplayCard(display: display)
+                            DisplayCard(display: display,
+                                        onSet: { lifecycle.setBrightness($0, for: display.id) },
+                                        surface: .window)
                         }
                     }
                     .padding(.horizontal, Sp.sm)
@@ -178,128 +172,6 @@ private struct PermissionsBanner: View {
     }
 }
 
-// MARK: - Display card
-//
-// Single bordered card per display. Header shows display name + big serif nits
-// on the right. The slim `XDRBoostMeter` replaces the old full-range slider —
-// we only own the boost range (1.0–2.0) since macOS owns 0.0–1.0.
-
-private struct DisplayCard: View {
-    let display: DisplayInfo
-
-    @Environment(AppState.self) private var appState
-    @Environment(AppLifecycleManager.self) private var lifecycle
-    @Environment(\.colorScheme) private var scheme
-
-    private var headerIcon: String {
-        display.isBuiltIn ? "display" : "display.2"
-    }
-
-    private var subtitle: String {
-        switch (display.isBuiltIn, display.isXDR) {
-        case (true,  true):  return "Liquid Retina XDR"
-        case (true,  false): return "Built-in Display"
-        case (false, true):  return "Pro Display XDR"
-        case (false, false): return "External Display"
-        }
-    }
-
-    /// Comma-formatted nits string (e.g. "1,600"). Keeps the big serif number tidy.
-    private var nitsString: String {
-        let n = appState.nitsForBrightness(display.brightness, maxNits: display.maxNits)
-        return nitsFormatter.string(from: NSNumber(value: n)) ?? "\(n)"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Sp.sm) {
-            // Header — name + subtitle on the left, big serif nits + mode pill on the right
-            HStack(alignment: .top, spacing: Sp.sm) {
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Image(systemName: headerIcon)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(.secondary)
-                        Text(display.name)
-                            .font(.bodyMedium)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    Text(subtitle)
-                        .font(.bodySmall)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(nitsString)
-                            .font(.serif(20, weight: .medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .contentTransition(.numericText())
-                        Text("nits")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                    }
-                    ModeBadge(isXDRActive: display.brightness > 1.0 && display.isXDR)
-                }
-            }
-
-            // Boost meter — only the XDR portion (1.0 → 2.0).
-            XDRBoostMeter(
-                brightness: display.brightness,
-                isXDR: display.isXDR,
-                onSet: { newValue in
-                    lifecycle.setBrightness(newValue, for: display.id)
-                }
-            )
-        }
-        .padding(Sp.sm)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: CardShape.corner)
-                .fill(scheme == .dark
-                    ? Color.white.opacity(0.04)
-                    : Color.black.opacity(0.025))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CardShape.corner)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: CardShape.borderUnselected)
-        )
-    }
-}
-
-// MARK: - Preset chip
-//
-// Tiny chip per preset (Normal / Extra / Outdoor). Single line: icon + name.
-// Active state: amber tinted background + amber border. Disabled (preset > 1.0
-// on a non-XDR display): 0.4 opacity, no interaction.
-
-// MARK: - Mode badge
-//
-// Small pill that surfaces whether the display is currently in SDR (default,
-// macOS-managed) or XDR (boost active above the SDR ceiling). Sits beneath
-// the big serif nits number in the display card header.
-
-private struct ModeBadge: View {
-    let isXDRActive: Bool
-
-    var body: some View {
-        Text(isXDRActive ? "XDR" : "SDR")
-            .font(.system(size: 9, weight: .semibold))
-            .tracking(0.5)
-            .foregroundStyle(isXDRActive ? Color.xdrAmber : Color.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(
-                (isXDRActive ? Color.xdrAmber : Color.secondary).opacity(0.14),
-                in: Capsule()
-            )
-    }
-}
-
 // MARK: - Settings sheet
 
 private struct SettingsSheet: View {
@@ -348,7 +220,13 @@ private struct SettingsSheet: View {
                     Divider()
 
                     section("Menu bar") {
-                        toggle("Show nits in menu bar", isOn: $state.showNitsInMenuBar)
+                        VStack(alignment: .leading, spacing: Sp.sm) {
+                            toggle("Show level in menu bar", isOn: $state.showLevelInMenuBar)
+                            LaunchAtLogin.Toggle("Launch at Login")
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .font(.bodyBase)
+                        }
                     }
 
                     Divider()

@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CoreGraphics
 import KeyboardShortcuts
 import UserNotifications
 
@@ -13,6 +14,10 @@ final class AppLifecycleManager {
     let xdrController = XDRController()
     let sleepWakeManager: SleepWakeManager
     let batteryMonitor = BatteryMonitor()
+
+    /// Brightness engine for displays with no hardware brightness control.
+    /// Self-contained; never enters the XDRController boost paths.
+    let softwareDimmer = SoftwareDimmer()
 
     /// Back-reference to AppState so brightness changes update the menu bar icon.
     var appState: AppState?
@@ -44,6 +49,8 @@ final class AppLifecycleManager {
     /// Tracks whether we already sent the thermal reminder for each display
     /// this activation session (reset when XDR is deactivated).
     private var thermalReminderSent: [CGDirectDisplayID: Bool] = [:]
+
+    private var displayParamsObserver: NSObjectProtocol?
 
     /// Duration after which we send an informational thermal reminder.
     private static let thermalReminderInterval: TimeInterval = 30 * 60 // 30 minutes
@@ -105,7 +112,7 @@ final class AppLifecycleManager {
         // double-write on launch: SDR jumped, then jumped again as the second pass ran.
 
         // Re-sync appState.displays when monitors are connected/disconnected
-        NotificationCenter.default.addObserver(
+        displayParamsObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
             queue: .main
@@ -133,10 +140,32 @@ final class AppLifecycleManager {
                     }
                 }
 
+                // Re-assert boost for displays that were ALREADY present (not reconnected)
+                // whose gamma table this reconfiguration wiped. macOS resets gamma on any
+                // display change (e.g. plugging in another monitor), and the controller's
+                // cache otherwise thinks the boost is still applied — so it would skip
+                // re-writing and the boost would be silently lost. Self-guarding: only acts
+                // when the boost was ACTUALLY wiped (gamma reads back near-identity while a
+                // boost is active), so it is a no-op when the boost survived.
+                for display in self.displayManager.displays
+                where display.supportsHardwareBrightness && !reconnected.contains(display.id) {
+                    let saved = self.xdrController.getBrightness(for: display.id)
+                    guard saved > XDRConstants.sdrMaxBrightness,
+                          Self.gammaWasWiped(display.id) else { continue }
+                    // Bounce through SDR to clear the controller's stale gamma cache, then
+                    // re-apply the saved boost so the gamma table is actually rewritten.
+                    self.xdrController.setBrightness(XDRConstants.sdrMaxBrightness, for: display.id)
+                    self.xdrController.setBrightness(saved, for: display.id)
+                }
+
                 let freshDisplays = self.displayManager.displays
                 appState.displays = freshDisplays.map { fresh in
                     var display = fresh
-                    if reconnected.contains(fresh.id) {
+                    if fresh.supportsHardwareBrightness == false {
+                        // Software-dimmed panel: the dimmer is the source of truth
+                        // (it re-asserts its own gamma on screen-parameter changes).
+                        display.brightness = self.softwareDimmer.brightness(for: fresh.id)
+                    } else if reconnected.contains(fresh.id) {
                         // Reconnected display: brightness was just restored via
                         // setBrightness above; read the authoritative value from
                         // xdrController rather than stale AppState data.
@@ -163,6 +192,16 @@ final class AppLifecycleManager {
         }
 
         for display in displayManager.displays {
+            // Software-dimmed panels: pull the saved dim level from the dimmer
+            // (which already re-applied its gamma on init) and sync the model.
+            if display.supportsHardwareBrightness == false {
+                let level = softwareDimmer.brightness(for: display.id)
+                if let idx = appState?.displays.firstIndex(where: { $0.id == display.id }) {
+                    appState?.displays[idx].brightness = level
+                }
+                continue
+            }
+
             let key = "xdr_brightness_\(display.id)"
             let savedXDR = UserDefaults.standard.double(forKey: key)
 
@@ -189,10 +228,15 @@ final class AppLifecycleManager {
                 appState?.displays[idx].brightness = current
             }
         }
+
+        // Apply any persisted software-dim levels now that the app has launched.
+        // (Deferred out of SoftwareDimmer.init so no overlay window is created early.)
+        softwareDimmer.reassertAll()
     }
 
     func toggleXDRForActiveDisplay() {
         guard let display = activeDisplay() else { return }
+        guard display.supportsHardwareBrightness else { return } // no XDR toggle for software-dimmed panels
         let current = xdrController.getBrightness(for: display.id)
 
         if current > XDRConstants.sdrMaxBrightness {
@@ -207,6 +251,15 @@ final class AppLifecycleManager {
 
     func adjustBrightness(by delta: Double) {
         guard let display = activeDisplay() else { return }
+
+        // Software-dimmed panels live entirely in 0…1 (1.0 = native brightness).
+        if display.supportsHardwareBrightness == false {
+            let current = softwareDimmer.brightness(for: display.id)
+            let target = max(XDRConstants.minBrightness, min(current + delta, XDRConstants.sdrMaxBrightness))
+            setBrightness(target, for: display.id)
+            return
+        }
+
         let current = xdrController.getBrightness(for: display.id)
         let maxAllowed = display.isXDR ? XDRConstants.xdrMaxBrightness : XDRConstants.sdrMaxBrightness
         let target = max(XDRConstants.minBrightness, min(current + delta, maxAllowed))
@@ -215,16 +268,28 @@ final class AppLifecycleManager {
     }
 
     func applyPreset(_ preset: BrightnessPreset) {
-        // Apply preset to ALL connected displays, clamping per-display by capability.
-        for display in displayManager.displays {
+        // Apply preset to all hardware-controlled displays, clamping per-display by
+        // capability. Software-dimmed panels have their own slider and are skipped.
+        for display in displayManager.displays where display.supportsHardwareBrightness {
             let maxAllowed = display.isXDR ? XDRConstants.xdrMaxBrightness : XDRConstants.sdrMaxBrightness
             let target = max(XDRConstants.minBrightness, min(preset.brightness, maxAllowed))
-            let current = xdrController.getBrightness(for: display.id)
+            let current = currentBrightness(for: display.id)
             animateBrightness(from: current, to: target, for: display.id)
         }
     }
 
     func setBrightness(_ value: Double, for displayID: CGDirectDisplayID) {
+        // Software-dimmed panels take a separate path that never touches the XDR
+        // boost machinery. Their range is 0…1 (1.0 = native brightness).
+        if isSoftwareDimmed(displayID) {
+            let clamped = max(XDRConstants.minBrightness, min(value, XDRConstants.sdrMaxBrightness))
+            softwareDimmer.setBrightness(clamped, for: displayID)
+            if let idx = appState?.displays.firstIndex(where: { $0.id == displayID }) {
+                appState?.displays[idx].brightness = clamped
+            }
+            return
+        }
+
         let wasXDR = (xdrController.getBrightness(for: displayID) > XDRConstants.sdrMaxBrightness)
         let isXDR = (value > XDRConstants.sdrMaxBrightness)
 
@@ -263,7 +328,7 @@ final class AppLifecycleManager {
     /// which forces the new mode's code path (gamma vs overlay) to engage immediately
     /// without the user having to nudge the slider.
     func handleBoostModeChange() {
-        for display in displayManager.displays {
+        for display in displayManager.displays where display.supportsHardwareBrightness {
             let current = xdrController.getBrightness(for: display.id)
             guard current > XDRConstants.sdrMaxBrightness else { continue }
             // setBrightness reads the latest boostMode from appState before delegating
@@ -281,8 +346,13 @@ final class AppLifecycleManager {
         thermalTask?.cancel()
         for (_, task) in shortcutTasks { task.cancel() }
         shortcutTasks.removeAll()
+        if let token = displayParamsObserver {
+            NotificationCenter.default.removeObserver(token)
+            displayParamsObserver = nil
+        }
         sleepWakeManager.shutdown()
         xdrController.shutdown()
+        softwareDimmer.shutdown()
     }
 
     private func cancelAllRamps() {
@@ -309,7 +379,7 @@ final class AppLifecycleManager {
         // CURRENT brightness before canceling so we never regress.
         let actualStart: Double
         if animationTasks[displayID] != nil {
-            actualStart = xdrController.getBrightness(for: displayID)
+            actualStart = currentBrightness(for: displayID)
             animationTasks[displayID]?.cancel()
         } else {
             actualStart = start
@@ -378,7 +448,7 @@ final class AppLifecycleManager {
         guard batteryMonitor.shouldDisableXDR(threshold: effectiveThreshold) else { return }
 
         var didDisableAny = false
-        for display in displayManager.displays {
+        for display in displayManager.displays where display.supportsHardwareBrightness {
             let current = xdrController.getBrightness(for: display.id)
             if current > XDRConstants.sdrMaxBrightness {
                 animateBrightness(from: current, to: XDRConstants.sdrMaxBrightness, for: display.id)
@@ -448,6 +518,33 @@ final class AppLifecycleManager {
     }
 
     // MARK: - Helpers
+
+    /// True when the display has no hardware brightness and is dimmed in software.
+    private func isSoftwareDimmed(_ displayID: CGDirectDisplayID) -> Bool {
+        displayManager.displays.first(where: { $0.id == displayID })?.supportsHardwareBrightness == false
+    }
+
+    /// Current brightness for a display, read from whichever engine owns it.
+    private func currentBrightness(for displayID: CGDirectDisplayID) -> Double {
+        isSoftwareDimmed(displayID)
+            ? softwareDimmer.brightness(for: displayID)
+            : xdrController.getBrightness(for: displayID)
+    }
+
+    /// True when `displayID`'s gamma table reads back near-identity — i.e. a boost that
+    /// should be active has been wiped (e.g. by a display reconfiguration). Reads the live
+    /// hardware LUT, so it reflects reality rather than the controller's cached belief.
+    private static func gammaWasWiped(_ displayID: CGDirectDisplayID) -> Bool {
+        let length: UInt32 = 256
+        var red = [CGGammaValue](repeating: 0, count: Int(length))
+        var green = [CGGammaValue](repeating: 0, count: Int(length))
+        var blue = [CGGammaValue](repeating: 0, count: Int(length))
+        var count: UInt32 = 0
+        guard CGGetDisplayTransferByTable(displayID, length, &red, &green, &blue, &count) == .success,
+              count > 0 else { return false }
+        let maxValue = red.prefix(Int(count)).max() ?? 1.0
+        return maxValue < 1.05
+    }
 
     private func activeDisplay() -> DisplayInfo? {
         // Prefer the display under the mouse cursor, fall back to main display

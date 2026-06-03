@@ -13,12 +13,10 @@ struct XDRApp: App {
         UserDefaults.standard.register(defaults: [
             "userName": XDRConstants.bundledUserName
         ])
-        if #available(macOS 13.0, *) {
-            let firstRunKey = "didRegisterLoginItem"
-            if !UserDefaults.standard.bool(forKey: firstRunKey) {
-                try? SMAppService.mainApp.register()
-                UserDefaults.standard.set(true, forKey: firstRunKey)
-            }
+        let firstRunKey = "didRegisterLoginItem"
+        if !UserDefaults.standard.bool(forKey: firstRunKey) {
+            try? SMAppService.mainApp.register()
+            UserDefaults.standard.set(true, forKey: firstRunKey)
         }
     }
 
@@ -50,8 +48,8 @@ struct XDRApp: App {
         } label: {
             MenuBarLabel(
                 isXDRActive: appState.isAnyXDRActive,
-                showNits: appState.showNitsInMenuBar,
-                currentNits: appState.activeDisplay?.currentNits ?? 500
+                showLevel: appState.showLevelInMenuBar,
+                currentLevel: appState.activeDisplay?.currentLevel ?? 0.0
             )
             .accessibilityLabel("XDR Brightness Control")
             .onAppear { wireLifecycle() }

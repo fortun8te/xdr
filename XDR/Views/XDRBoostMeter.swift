@@ -136,7 +136,7 @@ struct XDRBoostMeter: View {
         }
         .frame(height: rowHeight)
         .help(isXDR
-              ? (isActive ? "Drag to adjust XDR boost (1× → 2×)" : "Tap to enable XDR boost")
+              ? (isActive ? "Drag to adjust XDR boost (1× → 2×) — actual peak brightness depends on Boost mode (Gamma vs Metal)" : "Tap to enable XDR boost")
               : "XDR boost not supported on this display")
         .onAppear {
             displayedBrightness = brightness

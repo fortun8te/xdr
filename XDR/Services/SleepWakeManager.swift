@@ -23,11 +23,14 @@ final class SleepWakeManager {
 
     // MARK: - Private
 
-    /// Debounce flag: prevents duplicate restoration when both didWake and screensDidWake fire
+    /// Debounce flag: prevents duplicate restoration when didWake, screensDidWake,
+    /// AND screenDidUnlock (which fires twice per unlock) all arrive on the same wake.
+    /// All wake/unlock paths check and set this flag before scheduling work.
     private var isWakeRestoreScheduled = false
 
-    /// Post-wake watchdog: periodically refreshes overlays for 30 seconds after wake
-    private var watchdogTask: Task<Void, Never>?
+    /// Cancellable handle for the in-flight two-pass restore sequence.
+    /// Kept so shutdown() can cancel it cleanly.
+    private var restoreSequenceTask: Task<Void, Never>?
 
     private let onRestore: (CGDirectDisplayID, Double) -> Void
     private let onRefresh: () -> Void
@@ -53,10 +56,11 @@ final class SleepWakeManager {
 
     // MARK: - Shutdown
 
-    /// Cancels the post-wake watchdog task. Call from AppLifecycleManager.shutdown().
+    /// Cancels any in-flight restore sequence. Call from AppLifecycleManager.shutdown().
     func shutdown() {
-        watchdogTask?.cancel()
-        watchdogTask = nil
+        restoreSequenceTask?.cancel()
+        restoreSequenceTask = nil
+        isWakeRestoreScheduled = false
     }
 
     // MARK: - Public API
@@ -132,52 +136,45 @@ final class SleepWakeManager {
         scheduleWakeRestore(source: "Screens did wake")
     }
 
+    /// screenDidUnlock fires up to TWICE per unlock event on some machines.
+    /// Route through the same debounced scheduler so it collapses with any
+    /// preceding didWake/screensDidWake into a single two-pass sequence.
     @objc private func screenDidUnlock(_ note: Notification) {
-        logger.info("Screen unlocked — scheduling delayed restore")
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2.0))
-            self?.restoreAllDisplays(pass: 0)
-        }
+        scheduleWakeRestore(source: "Screen unlocked")
     }
 
-    /// Shared wake-restore scheduling with debounce so only one double-pass runs
-    /// even when both didWake and screensDidWake fire on the same wake event.
+    /// Single entry point for all wake/unlock sources.
+    /// The debounce flag (isWakeRestoreScheduled) ensures exactly one two-pass
+    /// sequence runs per physical wake/unlock event, regardless of how many
+    /// redundant notifications arrive.
     private func scheduleWakeRestore(source: String) {
         guard !isWakeRestoreScheduled else {
             logger.info("\(source) — skipping (restoration already scheduled)")
             return
         }
         isWakeRestoreScheduled = true
-        logger.info("\(source) — scheduling double-pass restoration")
+        logger.info("\(source) — scheduling two-pass restoration")
 
-        // Pass 1: 1.5s — catches most displays
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.restoreAllDisplays(pass: 1)
-        }
+        // Cancel any leftover sequence from a previous (e.g. rapid) wake cycle.
+        restoreSequenceTask?.cancel()
 
-        // Pass 2: 3.0s — catches slow-initializing displays (Thunderbolt, USB-C hubs).
-        // Skip onRefresh() here (pass != 0) to avoid a second Metal teardown that causes
-        // a visible brightness dip ~3s after wake.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            self?.restoreAllDisplays(pass: 2)
-            self?.isWakeRestoreScheduled = false
-        }
+        // Two passes via a single Task keeps both delays cancellable via shutdown().
+        // Pass 1 @ 1.5s: catches fast-initialising displays (built-in, most HDMI).
+        // Pass 2 @ 3.5s: catches slow-initialising displays (Thunderbolt, USB-C hubs).
+        // refreshOverlays() is now idempotent and flicker-free, so we call it on
+        // both passes to flush any stale M5 Metal state before re-asserting gamma.
+        restoreSequenceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, let self else { return }
+            self.restoreAllDisplays(pass: 1)
 
-        // Watchdog: 3 checks × 5s = 15s of post-wake monitoring
-        // Each tick tears down stale Metal state (onRefresh) then restores brightness (onRestore)
-        watchdogTask?.cancel()
-        watchdogTask = Task { @MainActor [weak self] in
-            for tick in 0..<3 {
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled, let self else { return }
-                self.logger.info("Watchdog tick \(tick + 1)/3 — refreshing overlays")
-                self.onRefresh()
-                // Re-apply brightness so XDR state is rebuilt after refresh teardown
-                for (displayID, brightness) in self.savedBrightness {
-                    guard self.savedXDRActive[displayID] == true else { continue }
-                    self.onRestore(displayID, brightness)
-                }
-            }
+            try? await Task.sleep(for: .seconds(2.0)) // 1.5 + 2.0 = 3.5s from wake
+            guard !Task.isCancelled else { return }
+            self.restoreAllDisplays(pass: 2)
+
+            // Sequence complete — reset debounce so the next wake can schedule freely.
+            self.isWakeRestoreScheduled = false
+            self.restoreSequenceTask = nil
         }
     }
 
@@ -186,14 +183,11 @@ final class SleepWakeManager {
     private func restoreAllDisplays(pass: Int) {
         isRestoring = true
 
-        // Tear down and recreate overlays to ensure fresh Metal state after sleep/wake.
-        // Skip on pass 2 — a second teardown at 3s causes a visible brightness dip.
-        if pass != 2 {
-            logger.info("Restore pass \(pass) — refreshing overlays before restoration")
-            onRefresh()
-        } else {
-            logger.info("Restore pass \(pass) — skipping overlay refresh to prevent brightness dip")
-        }
+        // refreshOverlays() is now idempotent (no gamma reset, no blink), so it's
+        // safe to call on every pass. This flushes any stale M5 Metal state so the
+        // subsequent setBrightness calls land on a clean overlay.
+        logger.info("Restore pass \(pass) — refreshing overlays before restoration")
+        onRefresh()
 
         let clamshellClosed = isClamshellClosed()
 
@@ -203,6 +197,15 @@ final class SleepWakeManager {
         var skippedCount = 0
 
         for (displayID, brightness) in savedBrightness {
+            // Skip phantom entries saved at 0.0 — these represent displays that were
+            // never actually in XDR mode (or were recorded before a display connected)
+            // and generate spurious restore calls visible in logs as "display N at 0.0".
+            guard brightness > 0.0 else {
+                logger.debug("  Skip display \(displayID) — saved brightness is 0.0 (phantom entry)")
+                skippedCount += 1
+                continue
+            }
+
             // Skip built-in display when lid is closed
             if clamshellClosed && isBuiltInDisplay(displayID) {
                 logger.info("  Skip built-in display \(displayID) (clamshell closed)")

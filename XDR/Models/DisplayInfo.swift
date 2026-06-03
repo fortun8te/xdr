@@ -9,9 +9,12 @@ struct DisplayInfo: Identifiable, Equatable, Hashable {
     var maxNits: Int
     var brightness: Double = 1.0
     var maxEDR: Double = 1.0
+    /// False when macOS exposes no hardware brightness for this display, so it is
+    /// dimmed in software (gamma + overlay) instead. See SoftwareDimmer.
+    var supportsHardwareBrightness: Bool = true
 
-    var currentNits: Int {
-        XDRConstants.nits(forBrightness: brightness, maxNits: maxNits)
+    var currentLevel: Double {
+        XDRConstants.level(forBrightness: brightness)
     }
 
 }

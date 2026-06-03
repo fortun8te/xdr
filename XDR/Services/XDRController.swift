@@ -313,6 +313,12 @@ final class XDRController {
     /// `nil`   = not yet tested (first activation will populate this).
     private var gammaTableWorks: [CGDirectDisplayID: Bool] = [:]
 
+    /// Displays for which a gamma-effectiveness verification Task is currently in flight.
+    /// Set before scheduling the 500 ms verify Task; cleared when the Task exits on any path.
+    /// Prevents the launch-time brightness ramp (~18 calls in 300 ms) from queuing multiple
+    /// identical verification Tasks that all fire ~500 ms later and log "Gamma table verified" 10×.
+    private var pendingGammaVerification: Set<CGDirectDisplayID> = []
+
     // MARK: - Lifecycle
 
     init() {
@@ -353,10 +359,13 @@ final class XDRController {
 
     @MainActor
     private func handleSpaceChange() {
-        for (_, trigger) in triggers {
-            trigger.window.orderFrontRegardless()
-        }
-        // Only re-order overlays when they exist (M5 fallback path).
+        // The 1×1 EDR trigger lives at CGShieldingWindowLevel with .canJoinAllSpaces and
+        // .fullScreenAuxiliary, so it already persists across Space/focus changes without
+        // intervention. Re-ordering it on every activeSpaceDidChange — which also fires on
+        // app activation, menu-bar clicks, and Notification Center, not just deliberate
+        // Space swipes — forced a compositor recomposite that blipped panel brightness.
+        // That was the source of the seemingly-random "idle" blinking. We no longer touch
+        // the trigger here. Only the M5 full-screen overlay needs re-asserting.
         for (_, overlay) in boostOverlays {
             overlay.window.orderFrontRegardless()
         }
@@ -417,47 +426,68 @@ final class XDRController {
         return screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1.0
     }
 
-    func currentNits(for displayID: CGDirectDisplayID) -> Int {
-        nits(for: getBrightness(for: displayID))
+    /// Returns the current brightness for `displayID` expressed in nits,
+    /// using `maxNits` as the display's XDR ceiling (e.g. 1600 for XDR-capable,
+    /// 500 for SDR-only displays).
+    func currentNits(for displayID: CGDirectDisplayID, maxNits: Int) -> Int {
+        nits(for: getBrightness(for: displayID), maxNits: maxNits)
     }
 
-    func nits(for brightness: Double) -> Int {
-        XDRConstants.nits(forBrightness: brightness, maxNits: Int(Self.xdrMaxNits))
+    /// Converts a unified brightness value (0.0–2.0) to nits using the
+    /// given per-display `maxNits` ceiling instead of a hardcoded 1600.
+    func nits(for brightness: Double, maxNits: Int) -> Int {
+        XDRConstants.nits(forBrightness: brightness, maxNits: maxNits)
     }
 
-    func brightnessFromNits(_ nits: Double) -> Double {
+    /// Converts a nit value to a unified brightness (0.0–2.0) using the
+    /// given per-display `maxNits` ceiling.
+    /// `Self.sdrMaxNits` (500) is kept as a fixed system constant for the SDR portion.
+    func brightnessFromNits(_ nits: Double, maxNits: Int) -> Double {
+        let xdrMax = Double(maxNits)
         if nits <= Self.sdrMaxNits {
             return nits / Self.sdrMaxNits
         }
-        return 1.0 + (nits - Self.sdrMaxNits) / (Self.xdrMaxNits - Self.sdrMaxNits)
+        return 1.0 + (nits - Self.sdrMaxNits) / (xdrMax - Self.sdrMaxNits)
     }
 
+    /// Re-asserts the active boost after a sleep/wake (called by SleepWakeManager).
+    ///
+    /// Previously this tore everything down — reset the gamma table to identity and
+    /// destroyed the trigger — then relied on the caller to rebuild from scratch. On the
+    /// gamma path that produced a visible blink (screen drops to SDR, then snaps back),
+    /// and SleepWakeManager calls it up to 6× per wake (double-pass + duplicate unlock
+    /// passes + a 3-tick watchdog), so a single wake flashed the panel repeatedly.
+    ///
+    /// The gamma table and the 1×1 trigger both survive sleep on M1–M4, so there is no
+    /// need to tear them down. We only invalidate the write cache and re-assert the
+    /// current factor directly — a single clean write with no intermediate identity dip
+    /// (a no-op on screen if the table is already correct, a one-step restore if macOS
+    /// cleared it during sleep). The Metal overlay (M5 path) genuinely can hold stale GPU
+    /// state across wake, so that one is still rebuilt.
     func refreshOverlays() {
-        // Bug 4 fix: only do a full Metal teardown when XDR is actually active.
-        // For displays that have never activated XDR there is nothing to recreate,
-        // so we skip them entirely to avoid a no-op churn that previously ran even
-        // during slider drags and incidental state changes.
         let activeDisplays = xdrActive.filter { $0.value == true }.map { $0.key }
         guard !activeDisplays.isEmpty else { return }
 
         for displayID in activeDisplays {
-            pendingGammaTasks[displayID]?.cancel()
-            pendingGammaTasks.removeValue(forKey: displayID)
+            let storedBrightness = brightness[displayID] ?? 0
 
-            headroomMonitorTasks[displayID]?.cancel()
-            headroomMonitorTasks.removeValue(forKey: displayID)
-
-            // Reset gamma table before tearing down.
-            resetGammaTable(for: displayID)
-
-            if let overlay = boostOverlays.removeValue(forKey: displayID) {
-                overlay.destroy()
+            if gammaTableWorks[displayID] == false {
+                // M5 overlay path: rebuild stale Metal state.
+                if let overlay = boostOverlays.removeValue(forKey: displayID) {
+                    overlay.destroy()
+                }
+                if storedBrightness > 1.0 {
+                    applyGammaScale(for: displayID, brightness: Float(storedBrightness))
+                }
+            } else {
+                // Gamma path: keep the trigger and headroom monitor alive. Invalidate the
+                // write cache so the re-assert actually issues, then write the current
+                // factor directly — no reset-to-identity, so no blink.
+                lastGammaFactor.removeValue(forKey: displayID)
+                if storedBrightness > 1.0 {
+                    applyGammaScale(for: displayID, brightness: Float(storedBrightness))
+                }
             }
-            if let trigger = triggers.removeValue(forKey: displayID) {
-                trigger.destroy()
-            }
-
-            xdrActive[displayID] = false
         }
     }
 
@@ -485,11 +515,15 @@ final class XDRController {
         }
         headroomMonitorTasks.removeAll()
 
+
         // Destroy all boost overlays (M5 fallback path only).
         for (_, overlay) in boostOverlays {
             overlay.destroy()
         }
         boostOverlays.removeAll()
+
+        // Clear in-flight verification markers before tearing down displays.
+        pendingGammaVerification.removeAll()
 
         // Reset gamma tables and destroy triggers.
         for (displayID, _) in triggers {
@@ -738,6 +772,13 @@ final class XDRController {
     //   At brightness=2.0: factor 2.0, macOS clips to actual panel headroom.
 
     /// Gamma scaling factor for gamma mode.
+    ///
+    /// The nit value shown in the UI (menu bar, display card, AppleScript) is a *target*
+    /// on the unified 0–`maxNits` scale derived from the user's brightness position.
+    /// In Gamma mode the actual panel peak is lower than the displayed target because the
+    /// gamma factor is capped at 1.5 (~750 nits from a 500-nit SDR base); Metal mode
+    /// reaches higher by driving the compositor's EDR headroom directly.
+    ///
     /// Capped at 1.5 to avoid the "overblown" look the user reported at higher factors.
     static func edrGammaFactor(xdrBrightness: Float, maxEdr: CGFloat) -> Float {
         let t = max(0.0, min(1.0, xdrBrightness - 1.0))
@@ -806,14 +847,28 @@ final class XDRController {
             return
         }
 
+        // If a verification Task is already in flight for this display (e.g. because the
+        // launch-time brightness ramp fired applyGammaScale ~18 times before the first
+        // 500 ms verify completed), skip scheduling another one. The gamma table has already
+        // been written above via applyGammaTable, so brightness tracks the ramp correctly.
+        if pendingGammaVerification.contains(displayID) {
+            return
+        }
+
         // Verify the gamma table actually had a visible effect (M5 returns success but no-ops).
         let baselineHeadroom = maxEdr
+        pendingGammaVerification.insert(displayID)
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self else {
+                return
+            }
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled,
                   self.xdrActive[displayID] == true,
-                  let screen = self.screen(for: displayID) else { return }
+                  let screen = self.screen(for: displayID) else {
+                self.pendingGammaVerification.remove(displayID)
+                return
+            }
 
             let currentHeadroom = screen.maximumExtendedDynamicRangeColorComponentValue
             let gammaEffective = currentHeadroom >= (baselineHeadroom - 0.05)
@@ -821,12 +876,14 @@ final class XDRController {
             if gammaEffective {
                 self.logger.info("Gamma table verified — using gamma path for display \(displayID)")
                 self.gammaTableWorks[displayID] = true
+                self.pendingGammaVerification.remove(displayID)
                 if let stored = self.brightness[displayID], stored > 1.0 {
                     self.applyGammaScale(for: displayID, brightness: Float(stored))
                 }
             } else {
                 self.logger.warning("Gamma table ineffective for display \(displayID) — falling back to overlay")
                 self.gammaTableWorks[displayID] = false
+                self.pendingGammaVerification.remove(displayID)
                 self.resetGammaTable(for: displayID)
                 if let stored = self.brightness[displayID], stored > 1.0 {
                     let f = Self.edrGammaFactor(xdrBrightness: Float(stored), maxEdr: currentHeadroom)
@@ -905,6 +962,7 @@ final class XDRController {
                 // Display disconnected.
                 pendingGammaTasks[displayID]?.cancel()
                 pendingGammaTasks.removeValue(forKey: displayID)
+                pendingGammaVerification.remove(displayID)
                 resetGammaTable(for: displayID)
                 trigger.destroy()
                 triggers.removeValue(forKey: displayID)

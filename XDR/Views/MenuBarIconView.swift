@@ -4,18 +4,18 @@ import SwiftUI
 
 struct MenuBarLabel: View {
     let isXDRActive: Bool
-    let showNits: Bool
-    let currentNits: Int
+    let showLevel: Bool
+    let currentLevel: Double
 
-    // Worst-case 4-digit value used purely to reserve layout width so the
-    // menu bar status item never resizes as currentNits changes.
-    private static let widthPlaceholder = "1600"
+    // Worst-case value ("10.0") used purely to reserve layout width so the
+    // menu bar status item never resizes as the level changes.
+    private static let widthPlaceholder = "10.0"
 
     private var iconName: String {
         isXDRActive ? "sun.max.fill" : "sun.max"
     }
 
-    // Icon-only content used both for rendering (when showNits == false) and
+    // Icon-only content used both for rendering (when showLevel == false) and
     // as the hidden placeholder ensuring the whole HStack has a stable width.
     private var iconView: some View {
         Image(systemName: iconName)
@@ -23,50 +23,44 @@ struct MenuBarLabel: View {
             .contentTransition(.symbolEffect(.replace))
     }
 
-    // Nits text overlaid on top of an invisible 4-digit placeholder so the
+    // Level text ("7.3") overlaid on top of an invisible "10.0" placeholder so the
     // numeric region's width is always the width of the worst-case string.
-    private var nitsView: some View {
-        HStack(spacing: 0) {
-            ZStack(alignment: .trailing) {
-                Text(Self.widthPlaceholder)
-                    .font(.caption2)
-                    .monospacedDigit()
-                    .hidden()
-                Text("\(currentNits)")
-                    .font(.caption2)
-                    .monospacedDigit()
-            }
-
-            Text(" nits")
+    private var levelView: some View {
+        ZStack(alignment: .trailing) {
+            Text(Self.widthPlaceholder)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .hidden()
+            Text(String(format: "%.1f", currentLevel))
+                .font(.caption2)
+                .monospacedDigit()
         }
     }
 
-    // The "real" content as it should appear given the current showNits flag.
+    // The "real" content as it should appear given the current showLevel flag.
     private var visibleContent: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 3) {
             iconView
-            if showNits {
-                nitsView
+            if showLevel {
+                levelView
             }
         }
     }
 
-    // The worst-case content (icon + nits) used as an invisible placeholder
+    // The worst-case content (icon + level) used as an invisible placeholder
     // so the outer frame is always the maximum possible width. This locks
-    // the rendered label width across every currentNits value. Toggling
-    // showNits in settings is still allowed to change the width once.
+    // the rendered label width across every level value. Toggling
+    // showLevel in settings is still allowed to change the width once.
     private var widthAnchor: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 3) {
             iconView
-            nitsView
+            levelView
         }
         .hidden()
     }
 
     var body: some View {
-        if showNits {
+        if showLevel {
             ZStack(alignment: .trailing) {
                 widthAnchor
                 visibleContent
@@ -83,16 +77,16 @@ struct MenuBarLabel: View {
 
 #Preview("Menu Bar - Icon Only") {
     VStack(spacing: 12) {
-        MenuBarLabel(isXDRActive: false, showNits: false, currentNits: 500)
-        MenuBarLabel(isXDRActive: true, showNits: false, currentNits: 720)
+        MenuBarLabel(isXDRActive: false, showLevel: false, currentLevel: 0.0)
+        MenuBarLabel(isXDRActive: true, showLevel: false, currentLevel: 7.2)
     }
     .padding()
 }
 
-#Preview("Menu Bar - With Nits") {
+#Preview("Menu Bar - With Level") {
     VStack(spacing: 12) {
-        MenuBarLabel(isXDRActive: false, showNits: true, currentNits: 500)
-        MenuBarLabel(isXDRActive: true, showNits: true, currentNits: 1600)
+        MenuBarLabel(isXDRActive: false, showLevel: true, currentLevel: 0.0)
+        MenuBarLabel(isXDRActive: true, showLevel: true, currentLevel: 10.0)
     }
     .padding()
 }

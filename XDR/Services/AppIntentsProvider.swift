@@ -74,7 +74,7 @@ struct SetBrightnessIntent: AppIntent {
         let displayIsXDR = matchedDisplay?.isXDR ?? false
         let maxNits = matchedDisplay?.maxNits ?? (displayIsXDR ? 1600 : 500)
         let clampedNits = max(0, min(nits, maxNits))
-        let brightness = controller.brightnessFromNits(Double(clampedNits))
+        let brightness = controller.brightnessFromNits(Double(clampedNits), maxNits: maxNits)
 
         lifecycle.setBrightness(brightness, for: displayID)
         return .result()
@@ -95,7 +95,8 @@ struct GetBrightnessIntent: AppIntent {
 
         let controller = lifecycle.xdrController
         let displayID = CGMainDisplayID()
-        let nits = controller.currentNits(for: displayID)
+        let maxNits = lifecycle.displayManager.display(for: displayID)?.maxNits ?? 1600
+        let nits = controller.currentNits(for: displayID, maxNits: maxNits)
         return .result(value: nits)
     }
 }
@@ -150,7 +151,8 @@ struct GetDisplayInfoIntent: AppIntent {
             throw IntentError.appNotRunning
         }
         let displayID = CGMainDisplayID()
-        let nits = lifecycle.xdrController.currentNits(for: displayID)
+        let maxNits = lifecycle.displayManager.display(for: displayID)?.maxNits ?? 1600
+        let nits = lifecycle.xdrController.currentNits(for: displayID, maxNits: maxNits)
         let isXDR = lifecycle.xdrController.getBrightness(for: displayID) > 1.0
         let status = isXDR ? "XDR Active" : "SDR"
         return .result(value: "\(status) - \(nits) nits")

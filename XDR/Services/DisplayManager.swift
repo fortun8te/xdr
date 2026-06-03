@@ -1,5 +1,4 @@
 import Cocoa
-import IOKit
 import Observation
 
 // MARK: - DisplayManager
@@ -50,7 +49,6 @@ final class DisplayManager {
         guard CGGetOnlineDisplayList(displayCount, &onlineDisplays, &displayCount) == .success else { return }
 
         let activeIDs = Array(onlineDisplays.prefix(Int(displayCount)))
-        let modelIdentifier = Self.readModelIdentifier()
 
         displays = activeIDs.map { displayID in
             let isBuiltIn = CGDisplayIsBuiltin(displayID) != 0
@@ -60,7 +58,8 @@ final class DisplayManager {
             let potentialEDR = screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1.0
             let isXDR = potentialEDR > 1.0
             let maxEDR = screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1.0
-            let maxNits = Self.determineMaxNits(isXDR: isXDR, isBuiltIn: isBuiltIn, modelIdentifier: modelIdentifier)
+            let maxNits = Self.determineMaxNits(isXDR: isXDR)
+            let supportsHardware = BrightnessSupport.hasHardwareBrightness(displayID)
 
             return DisplayInfo(
                 id: displayID,
@@ -68,7 +67,8 @@ final class DisplayManager {
                 isBuiltIn: isBuiltIn,
                 isXDR: isXDR,
                 maxNits: maxNits,
-                maxEDR: maxEDR
+                maxEDR: maxEDR,
+                supportsHardwareBrightness: supportsHardware
             )
         }
     }
@@ -81,46 +81,8 @@ final class DisplayManager {
 
     // MARK: - Max Nits Detection
 
-    private static func determineMaxNits(isXDR: Bool, isBuiltIn: Bool, modelIdentifier: String?) -> Int {
-        guard isXDR else { return 500 }
-
-        if let model = modelIdentifier {
-            // MacBook Pro 14"/16" with M1 Pro/Max or later
-            if model.contains("MacBookPro") {
-                if let suffix = model.components(separatedBy: "MacBookPro").last,
-                   let majorVersion = Int(suffix.components(separatedBy: ",").first ?? ""),
-                   majorVersion >= 18 {
-                    return 1600
-                }
-            }
-        }
-
-        // External Pro Display XDR (non-built-in but XDR capable)
-        if !isBuiltIn && isXDR {
-            return 1600
-        }
-
-        // Built-in XDR display on a qualifying MacBook Pro
-        if isBuiltIn && isXDR {
-            return 1600
-        }
-
-        return 500
-    }
-
-    // MARK: - IOKit Model Identifier
-
-    private static func readModelIdentifier() -> String? {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
-        guard service != IO_OBJECT_NULL else { return nil }
-        defer { IOObjectRelease(service) }
-
-        guard let property = IORegistryEntryCreateCFProperty(service, "model" as CFString, kCFAllocatorDefault, 0) else {
-            return nil
-        }
-
-        guard let data = property.takeRetainedValue() as? Data else { return nil }
-        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+    private static func determineMaxNits(isXDR: Bool) -> Int {
+        isXDR ? 1600 : 500
     }
 }
 
