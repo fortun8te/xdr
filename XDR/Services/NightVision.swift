@@ -6,108 +6,98 @@ import os.log
 
 // MARK: - NightVisionCurve (pure, testable)
 
-/// Maps a user-facing Night Vision intensity (0...1) onto the two values the
-/// overlay needs:
-///   * the opacity of a deep-red WASH layer (source-over), and
-///   * the opacity of a black DIM layer beneath it.
+/// Maps a user-facing Night Vision intensity (0...1) onto a true red-shift
+/// transform applied at the display's hardware gamma LUT.
 ///
-/// WHY SOURCE-OVER AND NOT MULTIPLY: a CALayer `compositingFilter` only blends
-/// within its own window's layer tree. The window server composites separate
-/// windows with plain source-over, so a "multiplyBlendMode" overlay window can
-/// never multiply the screen behind it; it just paints its color on top (this
-/// was the original implementation, and it produced a flat red wall plus
-/// compositor artifacts). With source-over the math is honest and predictable:
+/// WHY GAMMA, NOT AN OVERLAY: the science of dark adaptation (rod cells are
+/// blind to long-red wavelengths, so suppressing blue/green preserves night
+/// vision, and even a bright red wash hurts) calls for actually removing the
+/// short-wavelength output, not painting a translucent red film on top. A
+/// per-channel gamma LUT does exactly that: it scales each channel's maximum
+/// output in hardware, so white becomes deep red, blue collapses toward black,
+/// and the result is a genuine red filter rather than a pink veil. This is how
+/// real astronomy red-screen tools work, and it reaches every pixel including
+/// full-screen video and the cursor.
 ///
-///   after dim d:   c1 = content * (1 - d)
-///   after wash a:  c2 = c1 * (1 - a) + washColor * a
-///
-/// so for white content the channel response is:
-///   red   = (1-d)(1-a) + a * washRed   (red is lifted by the wash)
-///   green = (1-d)(1-a) + a * washGreen (tiny, keeps text edges alive)
-///   blue  = (1-d)(1-a)                 (suppressed hardest, wash has no blue)
-///
-/// Readability floors at full intensity are locked by tests on these derived
-/// white-response values. Nothing here touches a display gamma table, so it
-/// never fights the XDR boost engine or the SoftwareDimmer.
+/// `CGSetDisplayTransferByFormula(id, rMin,rMax,rGamma, gMin,gMax,gGamma, bMin,bMax,bGamma)`
+/// gives output = min + (max-min) * input^(1/gamma). With gamma 1 that is a
+/// straight scale of each channel's ceiling, which is all we need: lower the
+/// green and (harder) the blue ceiling as intensity climbs, and gently lower the
+/// red ceiling at the very top for a dimmer deep end.
 enum NightVisionCurve {
 
-    /// The wash color: deep red with a whisper of green (keeps anti-aliased
-    /// text edges distinguishable) and zero blue (the worst offender for dark
-    /// adaptation gets nothing).
-    static let washRed: Double = 1.0
-    static let washGreen: Double = 0.07
-    static let washBlue: Double = 0.0
+    /// Green channel ceiling at full intensity. A small floor (not zero) keeps a
+    /// trace of green so anti-aliased text edges and warm UI stay legible rather
+    /// than collapsing to a single flat red.
+    static let minGreen: Double = 0.12
+    /// Blue channel ceiling at full intensity. Lower than green: blue light is
+    /// the worst for dark adaptation, so it is suppressed hardest.
+    static let minBlue: Double = 0.05
+    /// Red channel ceiling at full intensity. Kept high so the surviving image is
+    /// bright red, with a gentle dim at the very top for comfort.
+    static let minRed: Double = 0.80
 
-    /// Wash opacity at full intensity. 0.55 leaves (1-d)(1-a) = 0.30 of the
-    /// original green/blue detail at max, a readable deep salmon-red.
-    static let maxWash: Double = 0.55
-    /// Dim opacity at full intensity. Modest: the deep end is dim-but-readable
-    /// dark adaptation, never a near-black screen.
-    static let maxDim: Double = 0.33
-    /// Intensity below which no dimming is applied; the warm and red-shift
-    /// zones stay at full luminance.
-    static let dimThreshold: Double = 0.45
-
-    /// smoothstep: keeps the low end gentle (a better Night Shift) and brings
-    /// the strong red on smoothly rather than abruptly.
+    /// smoothstep: keeps the low end gentle (a better Night Shift) and brings the
+    /// strong red on smoothly rather than abruptly.
     private static func eased(_ t: Double) -> Double {
         let c = clamp(t)
         return c * c * (3 - 2 * c)
     }
 
-    /// Opacity of the red wash layer for a given intensity.
-    static func washAlpha(forIntensity intensity: Double) -> Double {
-        maxWash * eased(intensity)
+    /// Red ceiling fed to the gamma LUT. 1.0 (no attenuation) until the top third,
+    /// then eases down to `minRed` so the deep end dims a touch.
+    static func redMax(forIntensity intensity: Double) -> Double {
+        let t = clamp(intensity)
+        guard t > 0.7 else { return 1.0 }
+        let k = (t - 0.7) / 0.3
+        return 1.0 + (minRed - 1.0) * eased(k)
     }
 
-    /// Opacity of the black dim layer. Zero until `dimThreshold`, then ramps
-    /// linearly to `maxDim` at full intensity.
+    /// Green ceiling: eases from 1.0 (no shift) down to `minGreen` (deep red).
+    static func greenMax(forIntensity intensity: Double) -> Double {
+        1.0 + (minGreen - 1.0) * eased(intensity)
+    }
+
+    /// Blue ceiling: eases from 1.0 down to `minBlue`. Always below the green
+    /// curve, so blue is the most suppressed channel at every intensity.
+    static func blueMax(forIntensity intensity: Double) -> Double {
+        1.0 + (minBlue - 1.0) * eased(intensity)
+    }
+
+    // MARK: - Overlay fallback (for displays whose gamma is owned by boost/dimmer)
+
+    /// A display already driven by the XDR boost or the SoftwareDimmer owns its
+    /// gamma table; we must not fight it. There we paint a red wash overlay
+    /// instead (source-over, no gamma). These two values drive that overlay.
+    ///
+    /// Wash opacity: the red film strength. Tuned so the overlay's look roughly
+    /// matches the gamma path at the same intensity.
+    static func washAlpha(forIntensity intensity: Double) -> Double {
+        0.55 * eased(intensity)
+    }
+
+    /// Black dim opacity beneath the wash, for the deep end only.
     static func dimAlpha(forIntensity intensity: Double) -> Double {
         let t = clamp(intensity)
-        guard t > dimThreshold else { return 0 }
-        return (t - dimThreshold) / (1 - dimThreshold) * maxDim
+        guard t > 0.6 else { return 0 }
+        return (t - 0.6) / 0.4 * 0.33
     }
 
-    // MARK: derived white response (what a white pixel becomes), for tests
+    static let washColor = (red: 1.0, green: 0.07, blue: 0.0)
 
-    static func whiteRed(forIntensity intensity: Double) -> Double {
-        let a = washAlpha(forIntensity: intensity)
-        let d = dimAlpha(forIntensity: intensity)
-        return (1 - d) * (1 - a) + a * washRed
-    }
+    // MARK: - Engage ramp (pure, testable)
 
-    static func whiteGreen(forIntensity intensity: Double) -> Double {
-        let a = washAlpha(forIntensity: intensity)
-        let d = dimAlpha(forIntensity: intensity)
-        return (1 - d) * (1 - a) + a * washGreen
-    }
-
-    static func whiteBlue(forIntensity intensity: Double) -> Double {
-        let a = washAlpha(forIntensity: intensity)
-        let d = dimAlpha(forIntensity: intensity)
-        return (1 - d) * (1 - a) + a * washBlue
-    }
-
-    // MARK: engage ramp (pure, testable)
-
-    /// Eased 0...1 ramp used by the fade-in/out so engaging never snaps.
+    /// Eased 0...1 ramp used to step the gamma in and out over ~1s so engaging
+    /// never snaps. Shared by fade-in and fade-out.
     static func rampProgress(_ t: Double) -> Double {
         eased(t)
-    }
-
-    /// The constant wash layer color (opacity is the animated quantity).
-    static func washColor() -> CGColor {
-        CGColor(red: washRed, green: washGreen, blue: washBlue, alpha: 1.0)
     }
 
     private static func clamp(_ v: Double) -> Double { min(max(v, 0), 1) }
 }
 
-// MARK: - Night Vision overlay window
+// MARK: - Red wash overlay (fallback for boosted / dimmed displays only)
 
-/// A borderless, click-through, full-screen window pinned above everything on
-/// one screen. Two plain source-over layers: black dim below, deep-red wash on
-/// top. No blend-mode tricks: those cannot reach other windows' pixels.
 @MainActor
 private final class NightVisionOverlayWindow {
     let window: NSWindow
@@ -115,41 +105,22 @@ private final class NightVisionOverlayWindow {
     private let dimLayer = CALayer()
     private let washLayer = CALayer()
 
-    /// Fade-in when Night Vision engages: slow enough that the red never snaps.
-    static let fadeInDuration: CFTimeInterval = 1.2
-    /// Fade-out when it disengages: quick but still a fade, not a cut.
-    static let fadeOutDuration: CFTimeInterval = 0.4
-    /// Settle time for live slider moves.
-    static let slideDuration: CFTimeInterval = 0.18
-
     init(screen: NSScreen) {
-        window = NSWindow(
-            contentRect: screen.frame,
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false,
-            screen: screen
-        )
+        window = NSWindow(contentRect: screen.frame, styleMask: .borderless,
+                          backing: .buffered, defer: false, screen: screen)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.ignoresMouseEvents = true
         window.hasShadow = false
-        // No implicit AppKit window animations: ordering in/out must never
-        // flicker or scale (this was part of the engage glitch).
         window.animationBehavior = .none
         window.isReleasedWhenClosed = false
-        // One above the XDR boost / dimmer shielding windows so the red filter
-        // composites on top of everything, including full-screen apps.
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 1)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        // Never baked into screenshots or screen shares.
         window.sharingType = .none
 
         host = NSView(frame: screen.frame)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
-        // Start fully transparent; the engage fade brings the whole host in.
-        host.layer?.opacity = 0
 
         dimLayer.frame = host.bounds
         dimLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
@@ -159,59 +130,21 @@ private final class NightVisionOverlayWindow {
 
         washLayer.frame = host.bounds
         washLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        washLayer.backgroundColor = NightVisionCurve.washColor()
+        let w = NightVisionCurve.washColor
+        washLayer.backgroundColor = CGColor(red: w.red, green: w.green, blue: w.blue, alpha: 1)
         washLayer.opacity = 0
         host.layer?.addSublayer(washLayer)
 
         window.contentView = host
-        // Order front only after the layer tree is fully configured and
-        // transparent, so the window's first composited frame is invisible.
         window.orderFrontRegardless()
     }
 
-    /// Push the current intensity into both layers.
-    func apply(intensity: Double, animated: Bool) {
-        let wash = Float(NightVisionCurve.washAlpha(forIntensity: intensity))
-        let dim = Float(NightVisionCurve.dimAlpha(forIntensity: intensity))
-
-        if animated {
-            // Engage: set the destination look instantly while the host is
-            // transparent, then fade the whole overlay in as one unit.
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            washLayer.opacity = wash
-            dimLayer.opacity = dim
-            CATransaction.commit()
-            fadeHost(to: 1, duration: Self.fadeInDuration)
-        } else {
-            // Live slider move: glide both opacities to their new values.
-            CATransaction.begin()
-            CATransaction.setAnimationDuration(Self.slideDuration)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
-            washLayer.opacity = wash
-            dimLayer.opacity = dim
-            CATransaction.commit()
-        }
-    }
-
-    /// Fade the whole overlay out, then run `completion` (orders the window out
-    /// only once fully faded, so disengage is never a cut).
-    func fadeOutAndDestroy(_ completion: @escaping @MainActor () -> Void) {
+    func apply(intensity: Double) {
         CATransaction.begin()
-        CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
-        fadeHost(to: 0, duration: Self.fadeOutDuration)
+        CATransaction.setAnimationDuration(0.18)
+        washLayer.opacity = Float(NightVisionCurve.washAlpha(forIntensity: intensity))
+        dimLayer.opacity = Float(NightVisionCurve.dimAlpha(forIntensity: intensity))
         CATransaction.commit()
-    }
-
-    private func fadeHost(to target: Float, duration: CFTimeInterval) {
-        guard let layer = host.layer else { return }
-        let anim = CABasicAnimation(keyPath: "opacity")
-        anim.fromValue = layer.presentation()?.opacity ?? layer.opacity
-        anim.toValue = target
-        anim.duration = duration
-        anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        layer.opacity = target
-        layer.add(anim, forKey: "nvFade")
     }
 
     func reposition(to screen: NSScreen) {
@@ -225,43 +158,59 @@ private final class NightVisionOverlayWindow {
         }
     }
 
-    func destroy() {
-        window.orderOut(nil)
-    }
+    func destroy() { window.orderOut(nil) }
 }
 
 // MARK: - NightVision
 
-/// Astronomy-style deep red mode for dark adaptation. Stronger than Night
-/// Shift's warmest setting while keeping the screen readable.
+/// Astronomy-style deep red mode for dark adaptation. Applies a per-display
+/// gamma LUT that suppresses green and (hardest) blue, so the screen becomes a
+/// true red rather than a translucent red film. Stronger than Night Shift's
+/// warmest while staying readable.
 ///
-/// Overlay-only: one filter window per display (black dim + red wash, plain
-/// source-over). It NEVER writes a display gamma table, so it coexists with the
-/// XDR boost engine and the SoftwareDimmer and survives macOS gamma wipes.
+/// COEXISTENCE WITH THE FORBIDDEN BOOST ZONE: a display whose gamma is already
+/// owned by the XDR boost engine or the SoftwareDimmer is left alone; there we
+/// fall back to a red wash overlay window (no gamma) so the two never fight over
+/// the same LUT. In the normal dark-room case nothing is boosted or dimmed, so
+/// every display gets the proper hardware gamma red.
+///
+/// Enumerates displays with `CGGetOnlineDisplayList` (every panel, including
+/// externals that `NSScreen.displayID` can report as 0) and re-asserts on
+/// display-layout and wake changes, since macOS wipes gamma on both.
 @MainActor
 @Observable
 final class NightVision {
 
-    /// One filter overlay per online display while Night Vision is enabled.
+    /// Injected by AppLifecycleManager: true when this display's gamma is owned
+    /// by the boost engine or the software dimmer, so Night Vision must use the
+    /// overlay fallback there instead of writing gamma.
+    @ObservationIgnored
+    var isGammaBusy: (CGDirectDisplayID) -> Bool = { _ in false }
+
+    /// Displays we currently drive via gamma (so we only ever reset our own).
+    @ObservationIgnored
+    private var gammaDisplays: Set<CGDirectDisplayID> = []
+    /// Red wash overlays for displays whose gamma is busy.
     @ObservationIgnored
     private var overlays: [CGDirectDisplayID: NightVisionOverlayWindow] = [:]
 
-    @ObservationIgnored
-    private var screenObserver: NSObjectProtocol?
+    @ObservationIgnored private var screenObserver: NSObjectProtocol?
+    @ObservationIgnored private var wakeObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var wakeReassertTask: Task<Void, Never>?
+    @ObservationIgnored private var rampTask: Task<Void, Never>?
 
-    @ObservationIgnored
-    private let logger = Logger(subsystem: "com.xdr.app", category: "NightVision")
+    @ObservationIgnored private let logger = Logger(subsystem: "com.xdr.app", category: "NightVision")
 
     private static let enabledKey = "nightVision_enabled"
     private static let intensityKey = "nightVision_intensity"
 
-    /// Default intensity for the very first enable: a gentle warm shift.
     nonisolated static let firstEnableIntensity: Double = 0.35
-
-    /// A persisted enabled state is only auto-restored at launch when the
-    /// stored intensity is at or below this; a forgotten extreme setting never
-    /// ambushes the user at login.
     nonisolated static let safeRestoreCeiling: Double = 0.70
+
+    /// Steps and duration for the engage / disengage gamma ramp.
+    private static let rampSteps = 36
+    private static let fadeInDuration: Double = 1.2
+    private static let fadeOutDuration: Double = 0.4
 
     init() {
         registerObservers()
@@ -284,11 +233,8 @@ final class NightVision {
 
     // MARK: - Pure restore rule (testable)
 
-    /// Enabled survives a relaunch only when intensity is within the safe
-    /// ceiling; the stored intensity itself is always kept.
     nonisolated static func safeRestore(enabled: Bool, intensity: Double) -> (enabled: Bool, intensity: Double) {
-        let keepEnabled = enabled && intensity <= safeRestoreCeiling
-        return (keepEnabled, intensity)
+        (enabled && intensity <= safeRestoreCeiling, intensity)
     }
 
     // MARK: - Public API
@@ -301,7 +247,11 @@ final class NightVision {
         }
         isEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
-        if enabled { applyToAllDisplays(animated: true) } else { teardownAll(fade: true) }
+        if enabled {
+            ramp(to: intensity, over: Self.fadeInDuration)
+        } else {
+            ramp(to: 0, over: Self.fadeOutDuration) { [weak self] in self?.teardownAll() }
+        }
     }
 
     func setIntensity(_ value: Double) {
@@ -310,11 +260,11 @@ final class NightVision {
         hasEverEnabled = true
         UserDefaults.standard.set(clamped, forKey: Self.intensityKey)
         guard isEnabled else { return }
-        for (_, overlay) in overlays { overlay.apply(intensity: clamped, animated: false) }
+        // Live slider: cancel any ramp and apply directly so dragging is responsive.
+        rampTask?.cancel()
+        applyEverywhere(intensity: clamped)
     }
 
-    /// Apply the persisted state once after launch. A forgotten extreme setting
-    /// restores OFF (intensity preserved).
     func restoreOnLaunch() {
         let resolved = Self.safeRestore(enabled: isEnabled, intensity: intensity)
         intensity = resolved.intensity
@@ -322,78 +272,155 @@ final class NightVision {
             isEnabled = resolved.enabled
             UserDefaults.standard.set(isEnabled, forKey: Self.enabledKey)
         }
-        if isEnabled { applyToAllDisplays(animated: true) }
+        if isEnabled { ramp(to: intensity, over: Self.fadeInDuration) }
     }
 
-    /// Tear down cleanly on app termination. Persisted state is kept.
     func shutdown() {
-        if let token = screenObserver {
-            NotificationCenter.default.removeObserver(token)
-            screenObserver = nil
-        }
-        teardownAll(fade: false)
+        rampTask?.cancel()
+        wakeReassertTask?.cancel()
+        if let token = screenObserver { NotificationCenter.default.removeObserver(token) }
+        for token in wakeObservers { NSWorkspace.shared.notificationCenter.removeObserver(token) }
+        wakeObservers.removeAll()
+        teardownAll()
     }
 
     // MARK: - Application
 
-    private func applyToAllDisplays(animated: Bool) {
-        for screen in NSScreen.screens {
-            let displayID = screen.displayID
-            guard displayID != 0 else { continue }
-            let overlay: NightVisionOverlayWindow
-            let isNew: Bool
-            if let existing = overlays[displayID] {
-                overlay = existing
-                overlay.reposition(to: screen)
-                isNew = false
+    /// Push a fixed intensity to every online display, choosing gamma or the
+    /// overlay fallback per display.
+    private func applyEverywhere(intensity i: Double) {
+        let online = Self.onlineDisplayIDs()
+        for id in online {
+            if isGammaBusy(id) {
+                applyOverlay(intensity: i, for: id)
+                resetGammaIfOwned(id)
             } else {
-                overlay = NightVisionOverlayWindow(screen: screen)
-                overlays[displayID] = overlay
-                isNew = true
+                applyGamma(intensity: i, for: id)
+                dropOverlay(id)
             }
-            // Only fresh overlays do the slow engage fade; survivors of a
-            // display-layout change just update without re-fading.
-            overlay.apply(intensity: intensity, animated: animated && isNew)
+        }
+        // Drop overlays / gamma for displays that went away.
+        for id in overlays.keys where !online.contains(id) { dropOverlay(id) }
+        for id in gammaDisplays where !online.contains(id) { gammaDisplays.remove(id) }
+    }
+
+    private func applyGamma(intensity i: Double, for id: CGDirectDisplayID) {
+        let r = Float(NightVisionCurve.redMax(forIntensity: i))
+        let g = Float(NightVisionCurve.greenMax(forIntensity: i))
+        let b = Float(NightVisionCurve.blueMax(forIntensity: i))
+        // output = min + (max-min) * input^(1/gamma); gamma 1 => straight ceiling scale.
+        let err = CGSetDisplayTransferByFormula(id,
+                                                0, r, 1,
+                                                0, g, 1,
+                                                0, b, 1)
+        if err == .success {
+            gammaDisplays.insert(id)
+        } else {
+            logger.error("NV gamma set failed for \(id, privacy: .public): \(err.rawValue)")
         }
     }
 
-    private func teardownAll(fade: Bool) {
-        let current = overlays
+    private func applyOverlay(intensity i: Double, for id: CGDirectDisplayID) {
+        guard let screen = Self.screen(for: id) else { dropOverlay(id); return }
+        let overlay = overlays[id] ?? {
+            let o = NightVisionOverlayWindow(screen: screen)
+            overlays[id] = o
+            return o
+        }()
+        overlay.reposition(to: screen)
+        overlay.apply(intensity: i)
+    }
+
+    private func dropOverlay(_ id: CGDirectDisplayID) {
+        if let o = overlays.removeValue(forKey: id) { o.destroy() }
+    }
+
+    private func resetGammaIfOwned(_ id: CGDirectDisplayID) {
+        guard gammaDisplays.contains(id) else { return }
+        _ = CGSetDisplayTransferByFormula(id, 0, 1, 1, 0, 1, 1, 0, 1, 1)
+        gammaDisplays.remove(id)
+    }
+
+    private func teardownAll() {
+        for id in gammaDisplays { _ = CGSetDisplayTransferByFormula(id, 0, 1, 1, 0, 1, 1, 0, 1, 1) }
+        gammaDisplays.removeAll()
+        for (_, o) in overlays { o.destroy() }
         overlays.removeAll()
-        if fade {
-            for (_, overlay) in current {
-                overlay.fadeOutAndDestroy { overlay.destroy() }
+    }
+
+    /// Step the intensity from its current applied value to `target` over
+    /// `duration`, easing, so gamma engages/disengages smoothly instead of
+    /// snapping. The final step lands exactly on `target`.
+    private func ramp(to target: Double, over duration: Double, then completion: (@MainActor () -> Void)? = nil) {
+        rampTask?.cancel()
+        let start = currentAppliedIntensity
+        let steps = Self.rampSteps
+        rampTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for step in 1...steps {
+                if Task.isCancelled { return }
+                let p = NightVisionCurve.rampProgress(Double(step) / Double(steps))
+                self.currentAppliedIntensity = start + (target - start) * p
+                self.applyEverywhere(intensity: self.currentAppliedIntensity)
+                try? await Task.sleep(for: .seconds(duration / Double(steps)))
             }
-        } else {
-            for (_, overlay) in current { overlay.destroy() }
+            if Task.isCancelled { return }
+            self.currentAppliedIntensity = target
+            self.applyEverywhere(intensity: target)
+            completion?()
         }
     }
+
+    @ObservationIgnored private var currentAppliedIntensity: Double = 0
 
     // MARK: - Observers
 
     private func registerObservers() {
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
+            object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.handleDisplaysChanged() }
+        }
+        let wsnc = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification] {
+            let token = wsnc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.scheduleWakeReassert() }
+            }
+            wakeObservers.append(token)
         }
     }
 
     private func handleDisplaysChanged() {
-        guard isEnabled else {
-            teardownAll(fade: false)
-            return
+        guard isEnabled else { teardownAll(); return }
+        // macOS just wiped gamma; re-apply at the live intensity to every display.
+        applyEverywhere(intensity: intensity)
+    }
+
+    private func scheduleWakeReassert() {
+        guard isEnabled else { return }
+        wakeReassertTask?.cancel()
+        wakeReassertTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, let self, self.isEnabled else { return }
+            self.applyEverywhere(intensity: self.intensity)
+            try? await Task.sleep(for: .seconds(2.0))
+            guard !Task.isCancelled, self.isEnabled else { return }
+            self.applyEverywhere(intensity: self.intensity)
         }
+    }
 
-        let online = Set(NSScreen.screens.map(\.displayID)).subtracting([0])
+    // MARK: - Display helpers
 
-        for (displayID, overlay) in overlays where !online.contains(displayID) {
-            overlay.destroy()
-            overlays.removeValue(forKey: displayID)
-        }
+    private static func onlineDisplayIDs() -> [CGDirectDisplayID] {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success else { return [] }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &ids, &count) == .success else { return [] }
+        return Array(ids.prefix(Int(count)))
+    }
 
-        applyToAllDisplays(animated: true)
+    private static func screen(for displayID: CGDirectDisplayID) -> NSScreen? {
+        NSScreen.screens.first { $0.displayID == displayID }
     }
 }

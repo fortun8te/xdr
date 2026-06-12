@@ -3,112 +3,118 @@ import XCTest
 
 final class NightVisionMathTests: XCTestCase {
 
-    // MARK: - Wash alpha
+    // MARK: - Channel ceilings (gamma LUT model)
 
-    func testWashAlpha_endpoints() {
-        XCTAssertEqual(NightVisionCurve.washAlpha(forIntensity: 0.0), 0.0, accuracy: 0.0001)
-        XCTAssertEqual(NightVisionCurve.washAlpha(forIntensity: 1.0), NightVisionCurve.maxWash, accuracy: 0.0001)
+    func testCeilings_endpoints() {
+        // Zero intensity is identity: every channel at full ceiling.
+        XCTAssertEqual(NightVisionCurve.redMax(forIntensity: 0), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.greenMax(forIntensity: 0), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.blueMax(forIntensity: 0), 1.0, accuracy: 0.0001)
+        // Full intensity hits the floors.
+        XCTAssertEqual(NightVisionCurve.redMax(forIntensity: 1), NightVisionCurve.minRed, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.greenMax(forIntensity: 1), NightVisionCurve.minGreen, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.blueMax(forIntensity: 1), NightVisionCurve.minBlue, accuracy: 0.0001)
     }
 
-    func testWashAlpha_monotonicallyIncreases() {
+    func testGreenAndBlue_monotonicallyDecrease() {
+        var lastG = 2.0, lastB = 2.0
+        for t in stride(from: 0.0, through: 1.0, by: 0.05) {
+            let g = NightVisionCurve.greenMax(forIntensity: t)
+            let b = NightVisionCurve.blueMax(forIntensity: t)
+            XCTAssertLessThanOrEqual(g, lastG + 0.0001, "green must not increase as intensity rises")
+            XCTAssertLessThanOrEqual(b, lastB + 0.0001, "blue must not increase as intensity rises")
+            lastG = g; lastB = b
+        }
+    }
+
+    func testBlueSuppressedHarderThanGreen() {
+        // Blue is the worst offender for dark adaptation, so it is always the
+        // most suppressed channel.
+        for t in stride(from: 0.1, through: 1.0, by: 0.1) {
+            XCTAssertLessThan(NightVisionCurve.blueMax(forIntensity: t),
+                              NightVisionCurve.greenMax(forIntensity: t) + 0.0001,
+                              "blue ceiling should be <= green at intensity \(t)")
+        }
+    }
+
+    func testRed_staysDominant() {
+        // Red is the surviving channel: its ceiling is always well above green/blue.
+        for t in stride(from: 0.3, through: 1.0, by: 0.1) {
+            XCTAssertGreaterThan(NightVisionCurve.redMax(forIntensity: t),
+                                 NightVisionCurve.greenMax(forIntensity: t) + 0.2)
+            XCTAssertGreaterThan(NightVisionCurve.redMax(forIntensity: t),
+                                 NightVisionCurve.blueMax(forIntensity: t) + 0.2)
+        }
+    }
+
+    func testRed_onlyDimsAtTop() {
+        // The lower two thirds keep full red brightness; only the deep end dims.
+        XCTAssertEqual(NightVisionCurve.redMax(forIntensity: 0.3), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.redMax(forIntensity: 0.7), 1.0, accuracy: 0.0001)
+        XCTAssertLessThan(NightVisionCurve.redMax(forIntensity: 1.0), 1.0)
+        XCTAssertGreaterThanOrEqual(NightVisionCurve.redMax(forIntensity: 1.0), 0.75) // never too dark
+    }
+
+    func testReadabilityFloors_atFullIntensity() {
+        // The contract that prevents an illegible result: at maximum, green and
+        // blue keep a trace so edges stay distinguishable, red stays bright.
+        XCTAssertGreaterThanOrEqual(NightVisionCurve.greenMax(forIntensity: 1.0), 0.10)
+        XCTAssertGreaterThanOrEqual(NightVisionCurve.blueMax(forIntensity: 1.0), 0.03)
+        XCTAssertGreaterThanOrEqual(NightVisionCurve.redMax(forIntensity: 1.0), 0.78)
+    }
+
+    func testWarmZone_isGentle() {
+        // At 35% (the first-enable default) the shift is mild: green and blue
+        // ceilings stay high so the screen reads like a warm Night Shift.
+        XCTAssertGreaterThan(NightVisionCurve.greenMax(forIntensity: 0.35), 0.70)
+        XCTAssertGreaterThan(NightVisionCurve.blueMax(forIntensity: 0.35), 0.55)
+        XCTAssertEqual(NightVisionCurve.redMax(forIntensity: 0.35), 1.0, accuracy: 0.0001)
+    }
+
+    func testInputsAreClamped() {
+        XCTAssertEqual(NightVisionCurve.greenMax(forIntensity: -1), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.greenMax(forIntensity: 2), NightVisionCurve.minGreen, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.blueMax(forIntensity: 2), NightVisionCurve.minBlue, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.redMax(forIntensity: 2), NightVisionCurve.minRed, accuracy: 0.0001)
+    }
+
+    // MARK: - Overlay fallback values
+
+    func testWashAlpha_endpointsAndMonotonic() {
+        XCTAssertEqual(NightVisionCurve.washAlpha(forIntensity: 0), 0, accuracy: 0.0001)
+        XCTAssertGreaterThan(NightVisionCurve.washAlpha(forIntensity: 1), 0.4)
         var last = -1.0
         for t in stride(from: 0.0, through: 1.0, by: 0.05) {
             let v = NightVisionCurve.washAlpha(forIntensity: t)
-            XCTAssertGreaterThanOrEqual(v, last, "wash must never decrease as intensity rises")
+            XCTAssertGreaterThanOrEqual(v, last)
             last = v
         }
     }
 
-    func testWashAlpha_gentleAtLowEnd() {
-        // The warm zone should be subtle: at 30% intensity the wash stays under
-        // half of its maximum (smoothstep keeps the low end gentle).
-        XCTAssertLessThan(NightVisionCurve.washAlpha(forIntensity: 0.30),
-                          NightVisionCurve.maxWash * 0.5)
-    }
-
-    // MARK: - Dim alpha
-
     func testDimAlpha_belowThreshold_isZero() {
-        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: 0.0), 0.0, accuracy: 0.0001)
-        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: NightVisionCurve.dimThreshold), 0.0, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: 0.0), 0, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: 0.6), 0, accuracy: 0.0001)
     }
 
-    func testDimAlpha_atFull_isMax() {
-        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: 1.0), NightVisionCurve.maxDim, accuracy: 0.0001)
-    }
-
-    func testDimAlpha_capIsModest() {
-        // Dark adaptation must dim, never black out.
-        XCTAssertLessThanOrEqual(NightVisionCurve.maxDim, 0.35)
-    }
-
-    // MARK: - Readability floors (white response at FULL intensity)
-
-    func testFullIntensity_whiteStaysReadable() {
-        // These floors are the contract that prevents the "flat red wall":
-        // a white pixel at maximum intensity keeps enough of every channel
-        // that text and UI edges stay distinguishable.
-        XCTAssertGreaterThanOrEqual(NightVisionCurve.whiteGreen(forIntensity: 1.0), 0.30)
-        XCTAssertGreaterThanOrEqual(NightVisionCurve.whiteBlue(forIntensity: 1.0), 0.28)
-        XCTAssertGreaterThanOrEqual(NightVisionCurve.whiteRed(forIntensity: 1.0), 0.80)
-    }
-
-    func testFullIntensity_isStronglyRed() {
-        // It still has to feel like night vision: red clearly dominates.
-        let r = NightVisionCurve.whiteRed(forIntensity: 1.0)
-        let g = NightVisionCurve.whiteGreen(forIntensity: 1.0)
-        let b = NightVisionCurve.whiteBlue(forIntensity: 1.0)
-        XCTAssertGreaterThan(r, g + 0.3)
-        XCTAssertGreaterThan(r, b + 0.3)
-    }
-
-    func testBlueNeverAboveGreen() {
-        // The wash carries a whisper of green and zero blue, so blue is always
-        // the most suppressed channel.
-        for t in stride(from: 0.0, through: 1.0, by: 0.1) {
-            XCTAssertLessThanOrEqual(NightVisionCurve.whiteBlue(forIntensity: t),
-                                     NightVisionCurve.whiteGreen(forIntensity: t))
-        }
-    }
-
-    func testZeroIntensity_isIdentity() {
-        XCTAssertEqual(NightVisionCurve.whiteRed(forIntensity: 0.0), 1.0, accuracy: 0.0001)
-        XCTAssertEqual(NightVisionCurve.whiteGreen(forIntensity: 0.0), 1.0, accuracy: 0.0001)
-        XCTAssertEqual(NightVisionCurve.whiteBlue(forIntensity: 0.0), 1.0, accuracy: 0.0001)
-    }
-
-    func testWarmZone_barelyDarkens() {
-        // At 35% (the first-enable default) there is no dimming at all and the
-        // wash is mild: the screen stays bright and readable.
-        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: 0.35), 0.0, accuracy: 0.0001)
-        XCTAssertGreaterThan(NightVisionCurve.whiteGreen(forIntensity: 0.35), 0.75)
-    }
-
-    // MARK: - Clamping
-
-    func testInputsAreClamped() {
-        XCTAssertEqual(NightVisionCurve.washAlpha(forIntensity: -1), 0.0, accuracy: 0.0001)
-        XCTAssertEqual(NightVisionCurve.washAlpha(forIntensity: 2), NightVisionCurve.maxWash, accuracy: 0.0001)
-        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: 2), NightVisionCurve.maxDim, accuracy: 0.0001)
+    func testDimAlpha_atFull_isModest() {
+        let d = NightVisionCurve.dimAlpha(forIntensity: 1.0)
+        XCTAssertGreaterThan(d, 0)
+        XCTAssertLessThanOrEqual(d, 0.35) // dims, never blacks out
     }
 
     // MARK: - Engage ramp
 
-    func testRampProgress_endpointsAndMonotonic() {
+    func testRampProgress_endpointsAndEased() {
         XCTAssertEqual(NightVisionCurve.rampProgress(0), 0, accuracy: 0.0001)
         XCTAssertEqual(NightVisionCurve.rampProgress(1), 1, accuracy: 0.0001)
+        XCTAssertLessThan(NightVisionCurve.rampProgress(0.1), 0.1)
+        XCTAssertGreaterThan(NightVisionCurve.rampProgress(0.9), 0.9)
         var last = -1.0
         for t in stride(from: 0.0, through: 1.0, by: 0.05) {
             let v = NightVisionCurve.rampProgress(t)
             XCTAssertGreaterThanOrEqual(v, last)
             last = v
         }
-    }
-
-    func testRampProgress_isEased() {
-        // Softer than linear near both ends.
-        XCTAssertLessThan(NightVisionCurve.rampProgress(0.1), 0.1)
-        XCTAssertGreaterThan(NightVisionCurve.rampProgress(0.9), 0.9)
     }
 
     // MARK: - Safe restore rule
@@ -119,28 +125,20 @@ final class NightVisionMathTests: XCTestCase {
         XCTAssertEqual(r.intensity, 0.5, accuracy: 0.0001)
     }
 
-    func testSafeRestore_enabledWithinCeiling_staysEnabled() {
-        let r = NightVision.safeRestore(enabled: true, intensity: 0.5)
-        XCTAssertTrue(r.enabled)
-    }
-
-    func testSafeRestore_ceilingIsInclusive() {
-        let r = NightVision.safeRestore(enabled: true, intensity: NightVision.safeRestoreCeiling)
-        XCTAssertTrue(r.enabled)
+    func testSafeRestore_withinCeiling_staysEnabled() {
+        XCTAssertTrue(NightVision.safeRestore(enabled: true, intensity: 0.5).enabled)
+        XCTAssertTrue(NightVision.safeRestore(enabled: true, intensity: NightVision.safeRestoreCeiling).enabled)
     }
 
     func testSafeRestore_extremeRestoresOffButKeepsIntensity() {
         let r = NightVision.safeRestore(enabled: true, intensity: 0.9)
         XCTAssertFalse(r.enabled)
         XCTAssertEqual(r.intensity, 0.9, accuracy: 0.0001)
-    }
-
-    func testSafeRestore_fullIntensityRestoresOff() {
         XCTAssertFalse(NightVision.safeRestore(enabled: true, intensity: 1.0).enabled)
     }
 
     func testFirstEnableDefault_isWarmZone() {
         XCTAssertEqual(NightVision.firstEnableIntensity, 0.35, accuracy: 0.0001)
-        XCTAssertEqual(NightVisionCurve.dimAlpha(forIntensity: NightVision.firstEnableIntensity), 0, accuracy: 0.0001)
+        XCTAssertEqual(NightVisionCurve.redMax(forIntensity: NightVision.firstEnableIntensity), 1.0, accuracy: 0.0001)
     }
 }

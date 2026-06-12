@@ -237,8 +237,18 @@ final class AppLifecycleManager {
         // (Deferred out of SoftwareDimmer.init so no overlay window is created early.)
         softwareDimmer.reassertAll()
 
-        // Restore Night Vision overlays now the app has launched (deferred out of
-        // NightVision.init so no overlay window is created early).
+        // Night Vision drives a per-display gamma LUT for true red, but must not
+        // fight the boost engine or the dimmer for a display's gamma table. Tell it
+        // which displays are already gamma-owned so it uses an overlay there instead.
+        nightVision.isGammaBusy = { [weak self] displayID in
+            guard let self else { return false }
+            if self.isSoftwareDimmed(displayID) { return true }
+            // A boost is live when the display's brightness is above the SDR ceiling.
+            return self.xdrController.getBrightness(for: displayID) > XDRConstants.sdrMaxBrightness
+        }
+
+        // Restore Night Vision now the app has launched (deferred out of init so no
+        // gamma or overlay is touched early).
         nightVision.restoreOnLaunch()
     }
 
