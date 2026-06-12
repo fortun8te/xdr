@@ -17,6 +17,16 @@ struct NightVisionSection: View {
         "\(Int((intensity * 100).rounded()))"
     }
 
+    /// Names the zone the current intensity sits in, mirroring the curve's three
+    /// readability bands. Updates live as the slider moves. Sentence case, no em dash.
+    private var zoneName: String {
+        switch intensity {
+        case ..<0.30: return "Warm"
+        case ..<0.70: return "Red shift"
+        default:      return "Dark adaptation"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Sp.sm) {
             HStack(alignment: .top, spacing: Sp.sm) {
@@ -47,13 +57,21 @@ struct NightVisionSection: View {
             }
 
             if isEnabled {
-                HStack(spacing: Sp.sm) {
-                    NightVisionSlider(intensity: intensity, onSet: onSetIntensity)
-                    Text("\(percentString)%")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 34, alignment: .trailing)
-                        .contentTransition(.numericText())
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: Sp.sm) {
+                        NightVisionSlider(intensity: intensity, onSet: onSetIntensity)
+                        Text("\(percentString)%")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, alignment: .trailing)
+                            .contentTransition(.numericText())
+                    }
+                    Text(zoneName)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.nightVisionRed.opacity(0.85))
+                        .lineLimit(1)
+                        .contentTransition(.opacity)
+                        .animation(.easeInOut(duration: 0.15), value: zoneName)
                 }
             }
         }
@@ -85,7 +103,7 @@ struct NightVisionSlider: View {
     private let rowHeight: CGFloat = 24
 
     @State private var dragging = false
-    @State private var displayed: Double = 0.7
+    @State private var displayed: Double = 0.35
 
     var body: some View {
         GeometryReader { geo in

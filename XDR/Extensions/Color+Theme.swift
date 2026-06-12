@@ -8,7 +8,9 @@ extension Color {
     // Gradient for XDR range on slider
     static let xdrGradientEnd = Color(red: 0.99, green: 0.90, blue: 0.54)   // #FDE68A
 
-    // Deep red accent for Night Vision
+    // Deep red accent for Night Vision. Sits high in the red channel and low in
+    // green/blue so it survives the overlay's multiply-red filter: under the filter
+    // it reads as a strong red rather than vanishing the way cool hues do.
     static let nightVisionRed = Color(red: 0.85, green: 0.13, blue: 0.13)   // #D92121
 }
 

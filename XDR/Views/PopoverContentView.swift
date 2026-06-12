@@ -29,7 +29,7 @@ struct PopoverContentView: View {
     // Night Vision UI mirror. Seeded from the engine in onAppear; the engine is the
     // source of truth and owns persistence.
     @State private var nightVisionEnabled = false
-    @State private var nightVisionIntensity = 0.7
+    @State private var nightVisionIntensity = 0.35
 
     @AppStorage("userName") private var userName = ""
     @AppStorage("autoDisableOnBattery") private var autoDisable = false
