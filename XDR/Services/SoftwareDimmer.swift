@@ -97,6 +97,10 @@ private final class DimOverlayWindow {
 @MainActor
 final class SoftwareDimmer {
 
+    /// True while Night Vision owns the displays. Levels can still be changed
+    /// and persist, but nothing is applied to gamma or overlays until resumed.
+    var suspended = false
+
     /// Per-display dim level, 0…1 (1.0 = native brightness). Source of truth.
     private var levels: [CGDirectDisplayID: Double] = [:]
 
@@ -128,12 +132,14 @@ final class SoftwareDimmer {
         let clamped = min(max(level, 0), 1)
         levels[displayID] = clamped
         persist(clamped, for: displayID)
+        guard !suspended else { return }   // applied on resume via reassertAll()
         apply(clamped, for: displayID)
     }
 
     /// Re-applies every active dim. Call after the display layout or wake state
     /// changes, since macOS resets gamma tables on those events.
     func reassertAll() {
+        guard !suspended else { return }
         let online = Self.onlineDisplayIDs()
         for (displayID, level) in levels where level < 1.0 && online.contains(displayID) {
             apply(level, for: displayID)
@@ -188,6 +194,7 @@ final class SoftwareDimmer {
     }
 
     private func handleDisplaysChanged() {
+        guard !suspended else { return }
         let online = Self.onlineDisplayIDs()
 
         // Reposition overlays that are still onscreen; drop the ones that went away.

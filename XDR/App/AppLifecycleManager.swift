@@ -56,6 +56,11 @@ final class AppLifecycleManager {
 
     private var displayParamsObserver: NSObjectProtocol?
 
+    /// While Night Vision is on it owns every display's look. Boost levels are
+    /// parked here and the dimmer is suspended; both restored when it turns off.
+    private var nightVisionSuspendedBoosts: [CGDirectDisplayID: Double] = [:]
+    private(set) var nightVisionOwnsGamma = false
+
     /// Duration after which we send an informational thermal reminder.
     private static let thermalReminderInterval: TimeInterval = 30 * 60 // 30 minutes
 
@@ -153,6 +158,9 @@ final class AppLifecycleManager {
                 // boost is active), so it is a no-op when the boost survived.
                 for display in self.displayManager.displays
                 where display.supportsHardwareBrightness && !reconnected.contains(display.id) {
+                    // Night Vision owns every gamma table while enabled; do not
+                    // re-assert a boost underneath it.
+                    if self.nightVisionOwnsGamma { break }
                     let saved = self.xdrController.getBrightness(for: display.id)
                     guard saved > XDRConstants.sdrMaxBrightness,
                           Self.gammaWasWiped(display.id) else { continue }
@@ -240,21 +248,52 @@ final class AppLifecycleManager {
         // Night Vision drives a per-display gamma LUT for true red, but must not
         // fight the boost engine or the dimmer for a display's gamma table. Tell it
         // which displays are already gamma-owned so it uses an overlay there instead.
-        nightVision.isGammaBusy = { [weak self] displayID in
-            guard let self else { return false }
-            if self.isSoftwareDimmed(displayID) { return true }
-            // A boost is live when the display's brightness is above the SDR ceiling.
-            return self.xdrController.getBrightness(for: displayID) > XDRConstants.sdrMaxBrightness
-        }
+        // Night Vision suspends the boost and the dimmer while enabled, so it
+        // always owns the gamma table outright; the overlay fallback is retired.
+        nightVision.isGammaBusy = { _ in false }
 
         // Restore Night Vision now the app has launched (deferred out of init so no
         // gamma or overlay is touched early).
         nightVision.restoreOnLaunch()
     }
 
-    /// Toggle Night Vision on/off across all displays.
+    /// Toggle Night Vision on/off across all displays. Night Vision is
+    /// EXCLUSIVE with the boost and the software dimmer: all three write
+    /// display gamma, and three writers on one LUT is exactly the fight the
+    /// user saw. While Night Vision is on, boosts are parked at SDR max and
+    /// the dimmer is suspended; turning it off restores both.
     func setNightVisionEnabled(_ enabled: Bool) {
-        nightVision.setEnabled(enabled)
+        if enabled {
+            nightVisionOwnsGamma = true
+            // Park any live boost at the SDR ceiling (saved for restore).
+            for display in displayManager.displays where display.supportsHardwareBrightness {
+                let current = xdrController.getBrightness(for: display.id)
+                if current > XDRConstants.sdrMaxBrightness {
+                    nightVisionSuspendedBoosts[display.id] = current
+                    setBrightness(XDRConstants.sdrMaxBrightness, for: display.id)
+                }
+            }
+            // Suspend the dimmer: identity gamma, overlays gone, levels kept.
+            softwareDimmer.suspended = true
+            softwareDimmer.restoreAll()
+            nightVision.setEnabled(true)
+        } else {
+            nightVision.setEnabled(false)
+            // Give the 0.4s disengage ramp time to reset Night Vision's gamma
+            // before the boost and dimmer take their tables back.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(0.7))
+                guard let self, !self.nightVision.isEnabled else { return }
+                self.nightVisionOwnsGamma = false
+                self.softwareDimmer.suspended = false
+                self.softwareDimmer.reassertAll()
+                let parked = self.nightVisionSuspendedBoosts
+                self.nightVisionSuspendedBoosts = [:]
+                for (displayID, level) in parked {
+                    self.setBrightness(level, for: displayID)
+                }
+            }
+        }
     }
 
     /// Set Night Vision intensity (0…1) across all displays.
@@ -317,6 +356,10 @@ final class AppLifecycleManager {
             }
             return
         }
+
+        // While Night Vision owns the displays, the boost stays parked: clamp any
+        // request to the SDR ceiling so a slider drag cannot restart the gamma fight.
+        let value = nightVisionOwnsGamma ? min(value, XDRConstants.sdrMaxBrightness) : value
 
         let wasXDR = (xdrController.getBrightness(for: displayID) > XDRConstants.sdrMaxBrightness)
         let isXDR = (value > XDRConstants.sdrMaxBrightness)
