@@ -60,6 +60,15 @@ struct MainWindowView: View {
                     .padding(.bottom, Sp.sm)
                 }
 
+                NightVisionSection(
+                    isEnabled: lifecycle.nightVision.isEnabled,
+                    intensity: lifecycle.nightVision.intensity,
+                    onToggle: { lifecycle.setNightVisionEnabled($0) },
+                    onSetIntensity: { lifecycle.setNightVisionIntensity($0) }
+                )
+                .padding(.horizontal, Sp.sm)
+                .padding(.bottom, Sp.sm)
+
                 Divider()
                 footer
             }

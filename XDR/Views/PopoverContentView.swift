@@ -28,8 +28,6 @@ struct PopoverContentView: View {
 
     // Night Vision UI mirror. Seeded from the engine in onAppear; the engine is the
     // source of truth and owns persistence.
-    @State private var nightVisionEnabled = false
-    @State private var nightVisionIntensity = 0.35
 
     @AppStorage("userName") private var userName = ""
     @AppStorage("autoDisableOnBattery") private var autoDisable = false
@@ -118,8 +116,6 @@ struct PopoverContentView: View {
         .frame(width: 320)
         .background(.ultraThinMaterial)
         .onAppear {
-            nightVisionEnabled = lifecycle.nightVision.isEnabled
-            nightVisionIntensity = lifecycle.nightVision.intensity
         }
     }
 
@@ -147,16 +143,10 @@ struct PopoverContentView: View {
             }
 
             NightVisionSection(
-                isEnabled: nightVisionEnabled,
-                intensity: nightVisionIntensity,
-                onToggle: { enabled in
-                    nightVisionEnabled = enabled
-                    lifecycle.setNightVisionEnabled(enabled)
-                },
-                onSetIntensity: { value in
-                    nightVisionIntensity = value
-                    lifecycle.setNightVisionIntensity(value)
-                }
+                isEnabled: lifecycle.nightVision.isEnabled,
+                intensity: lifecycle.nightVision.intensity,
+                onToggle: { lifecycle.setNightVisionEnabled($0) },
+                onSetIntensity: { lifecycle.setNightVisionIntensity($0) }
             )
         }
     }

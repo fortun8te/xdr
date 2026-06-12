@@ -1,103 +1,103 @@
 import AppKit
 import CoreGraphics
+import Observation
 import QuartzCore
 import os.log
 
 // MARK: - NightVisionCurve (pure, testable)
 
-/// Maps a user-facing Night Vision intensity (0…1) onto the two values the
+/// Maps a user-facing Night Vision intensity (0...1) onto the two values the
 /// overlay needs:
-///   * a multiply tint color (red kept, green/blue suppressed), applied with a
-///     `multiplyBlendMode` layer so the composited screen loses its blue/green
-///     channels rather than just gaining a flat red wash, and
-///   * a black darkening alpha layered underneath, so high intensity is both deep
-///     red AND dimmer (true dark adaptation, well past Night Shift's warmest).
+///   * the opacity of a deep-red WASH layer (source-over), and
+///   * the opacity of a black DIM layer beneath it.
 ///
-/// At low intensity it is a mild warm tint that leaves the screen near-natural and
-/// fully readable. As intensity climbs, green and especially blue are driven toward
-/// zero and a gentle dim fades in. Nothing here touches a display gamma table, so it
+/// WHY SOURCE-OVER AND NOT MULTIPLY: a CALayer `compositingFilter` only blends
+/// within its own window's layer tree. The window server composites separate
+/// windows with plain source-over, so a "multiplyBlendMode" overlay window can
+/// never multiply the screen behind it; it just paints its color on top (this
+/// was the original implementation, and it produced a flat red wall plus
+/// compositor artifacts). With source-over the math is honest and predictable:
+///
+///   after dim d:   c1 = content * (1 - d)
+///   after wash a:  c2 = c1 * (1 - a) + washColor * a
+///
+/// so for white content the channel response is:
+///   red   = (1-d)(1-a) + a * washRed   (red is lifted by the wash)
+///   green = (1-d)(1-a) + a * washGreen (tiny, keeps text edges alive)
+///   blue  = (1-d)(1-a)                 (suppressed hardest, wash has no blue)
+///
+/// Readability floors at full intensity are locked by tests on these derived
+/// white-response values. Nothing here touches a display gamma table, so it
 /// never fights the XDR boost engine or the SoftwareDimmer.
 enum NightVisionCurve {
 
-    /// Green channel multiplier at full intensity. Held at a readability floor so
-    /// white surfaces become a deep salmon-red rather than collapsing into an
-    /// illegible wall of pure red (anti-aliased text edges need some green to stay
-    /// distinguishable from their background).
-    static let minGreen: Double = 0.30
-    /// Blue channel multiplier at full intensity. Lower than green: blue light is
-    /// the worst offender for night/dark adaptation, so it is suppressed hardest,
-    /// but kept above zero so cool UI hues do not vanish entirely.
-    static let minBlue: Double = 0.12
-    /// Green multiplier at the very bottom of the range (mild warm look, a touch
-    /// gentler than Night Shift's warmest).
-    static let maxGreen: Double = 0.94
-    /// Blue multiplier at the very bottom of the range.
-    static let maxBlue: Double = 0.86
+    /// The wash color: deep red with a whisper of green (keeps anti-aliased
+    /// text edges distinguishable) and zero blue (the worst offender for dark
+    /// adaptation gets nothing).
+    static let washRed: Double = 1.0
+    static let washGreen: Double = 0.07
+    static let washBlue: Double = 0.0
 
-    /// Deepest black-overlay opacity at full intensity. Kept modest so the deep end
-    /// is dim-but-readable dark adaptation, never a near-black screen.
-    static let maxDarken: Double = 0.22
-    /// Intensity below which no darkening is applied. The lower two thirds of the
-    /// range are pure tint so the screen stays at full luminance and fully readable.
-    static let darkenThreshold: Double = 0.6
+    /// Wash opacity at full intensity. 0.55 leaves (1-d)(1-a) = 0.30 of the
+    /// original green/blue detail at max, a readable deep salmon-red.
+    static let maxWash: Double = 0.55
+    /// Dim opacity at full intensity. Modest: the deep end is dim-but-readable
+    /// dark adaptation, never a near-black screen.
+    static let maxDim: Double = 0.33
+    /// Intensity below which no dimming is applied; the warm and red-shift
+    /// zones stay at full luminance.
+    static let dimThreshold: Double = 0.45
 
-    /// Shapes the channel falloff. A gentle ease keeps the low end (0 to 0.3) close
-    /// to the warm endpoint so small settings feel like a better Night Shift, then
-    /// lets the upper range pull green/blue down toward their floors. Eased rather
-    /// than linear so the transition into strong red is smooth, not abrupt.
+    /// smoothstep: keeps the low end gentle (a better Night Shift) and brings
+    /// the strong red on smoothly rather than abruptly.
     private static func eased(_ t: Double) -> Double {
-        // smoothstep: 0->0, 1->1, flat slope at both ends.
         let c = clamp(t)
         return c * c * (3 - 2 * c)
     }
 
-    /// Red multiply factor. Red is always preserved fully so the surviving image is
-    /// bright red rather than dim red.
-    static func redFactor(forIntensity intensity: Double) -> Double {
-        _ = clamp(intensity) // intensity does not attenuate red; kept explicit for clarity
-        return 1.0
+    /// Opacity of the red wash layer for a given intensity.
+    static func washAlpha(forIntensity intensity: Double) -> Double {
+        maxWash * eased(intensity)
     }
 
-    /// Green multiply factor: eases from `maxGreen` (mild) down to `minGreen` (deep).
-    static func greenFactor(forIntensity intensity: Double) -> Double {
-        let t = eased(intensity)
-        return maxGreen + (minGreen - maxGreen) * t
-    }
-
-    /// Blue multiply factor: eases from `maxBlue` (mild) down to `minBlue` (deep).
-    /// Both endpoints sit below the green curve's, so blue is suppressed harder than
-    /// green at every intensity (blue is the worst offender for dark adaptation).
-    static func blueFactor(forIntensity intensity: Double) -> Double {
-        let t = eased(intensity)
-        return maxBlue + (minBlue - maxBlue) * t
-    }
-
-    /// Opacity of the black darkening layer beneath the tint. Zero until
-    /// `darkenThreshold`, then ramps to `maxDarken` at full intensity.
-    static func darkenAlpha(forIntensity intensity: Double) -> Double {
+    /// Opacity of the black dim layer. Zero until `dimThreshold`, then ramps
+    /// linearly to `maxDim` at full intensity.
+    static func dimAlpha(forIntensity intensity: Double) -> Double {
         let t = clamp(intensity)
-        guard t > darkenThreshold else { return 0 }
-        return (t - darkenThreshold) / (1 - darkenThreshold) * maxDarken
+        guard t > dimThreshold else { return 0 }
+        return (t - dimThreshold) / (1 - dimThreshold) * maxDim
     }
 
-    // MARK: - Engage ramp (pure, testable)
+    // MARK: derived white response (what a white pixel becomes), for tests
 
-    /// Eased 0…1 ramp used to fade the overlay in and out without snapping. Linear in
-    /// time would still read as a hard edge at the start and end; this smoothstep gives
-    /// a soft start and soft stop. Shared by the fade-in and fade-out so both feel calm.
+    static func whiteRed(forIntensity intensity: Double) -> Double {
+        let a = washAlpha(forIntensity: intensity)
+        let d = dimAlpha(forIntensity: intensity)
+        return (1 - d) * (1 - a) + a * washRed
+    }
+
+    static func whiteGreen(forIntensity intensity: Double) -> Double {
+        let a = washAlpha(forIntensity: intensity)
+        let d = dimAlpha(forIntensity: intensity)
+        return (1 - d) * (1 - a) + a * washGreen
+    }
+
+    static func whiteBlue(forIntensity intensity: Double) -> Double {
+        let a = washAlpha(forIntensity: intensity)
+        let d = dimAlpha(forIntensity: intensity)
+        return (1 - d) * (1 - a) + a * washBlue
+    }
+
+    // MARK: engage ramp (pure, testable)
+
+    /// Eased 0...1 ramp used by the fade-in/out so engaging never snaps.
     static func rampProgress(_ t: Double) -> Double {
         eased(t)
     }
 
-    /// Convenience: the multiply tint color (red preserved, green/blue suppressed).
-    /// Returned at full opacity. The layer's blend mode, not its alpha, does the work.
-    static func tintColor(forIntensity intensity: Double) -> CGColor {
-        CGColor(
-            red: CGFloat(redFactor(forIntensity: intensity)),
-            green: CGFloat(greenFactor(forIntensity: intensity)),
-            blue: CGFloat(blueFactor(forIntensity: intensity)),
-            alpha: 1.0
-        )
+    /// The constant wash layer color (opacity is the animated quantity).
+    static func washColor() -> CGColor {
+        CGColor(red: washRed, green: washGreen, blue: washBlue, alpha: 1.0)
     }
 
     private static func clamp(_ v: Double) -> Double { min(max(v, 0), 1) }
@@ -105,30 +105,21 @@ enum NightVisionCurve {
 
 // MARK: - Night Vision overlay window
 
-/// A borderless full-screen window pinned above everything on one screen that applies
-/// the red filter. Two stacked layers:
-///   1. a black darkening layer (normal blend) for the dimmed deep end, and
-///   2. a tint layer using `multiplyBlendMode`, so the screen content underneath is
-///      multiplied by the tint color (kills green/blue, keeps red).
-///
-/// Click-through, present on every Space, sits above full-screen apps and the XDR
-/// boost overlay, and excluded from screen capture (`sharingType = .none`). It owns
-/// no gamma table, so it composites cleanly over both the XDR boost and SoftwareDimmer.
+/// A borderless, click-through, full-screen window pinned above everything on
+/// one screen. Two plain source-over layers: black dim below, deep-red wash on
+/// top. No blend-mode tricks: those cannot reach other windows' pixels.
 @MainActor
 private final class NightVisionOverlayWindow {
     let window: NSWindow
     private let host: NSView
-    private let darkenLayer = CALayer()
-    private let tintLayer = CALayer()
+    private let dimLayer = CALayer()
+    private let washLayer = CALayer()
 
-    /// Fade-in duration when Night Vision engages. Slow enough that the red never
-    /// snaps onto the screen and ambushes the eye.
+    /// Fade-in when Night Vision engages: slow enough that the red never snaps.
     static let fadeInDuration: CFTimeInterval = 1.2
-    /// Fade-out duration when Night Vision disengages. Quicker than the fade-in so
-    /// turning it off feels responsive while still being a fade, not a cut.
+    /// Fade-out when it disengages: quick but still a fade, not a cut.
     static let fadeOutDuration: CFTimeInterval = 0.4
-    /// How long a slider move takes to settle. Short, so dragging feels live, but
-    /// non-zero so each step glides rather than jumps.
+    /// Settle time for live slider moves.
     static let slideDuration: CFTimeInterval = 0.18
 
     init(screen: NSScreen) {
@@ -143,72 +134,68 @@ private final class NightVisionOverlayWindow {
         window.backgroundColor = .clear
         window.ignoresMouseEvents = true
         window.hasShadow = false
-        // ARC is the single owner via the overlays dict; disable close-release so we
-        // never over-release (mirrors the SoftwareDimmer overlay hardening).
+        // No implicit AppKit window animations: ordering in/out must never
+        // flicker or scale (this was part of the engage glitch).
+        window.animationBehavior = .none
         window.isReleasedWhenClosed = false
-        // One level above the XDR boost / dimmer shielding window so the red filter
+        // One above the XDR boost / dimmer shielding windows so the red filter
         // composites on top of everything, including full-screen apps.
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 1)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        // Personal view: never baked into a screenshot or screen share.
+        // Never baked into screenshots or screen shares.
         window.sharingType = .none
 
         host = NSView(frame: screen.frame)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
-        // Start fully transparent; apply(intensity:animated:) fades the whole overlay
-        // in over fadeInDuration so engaging never snaps to full red.
+        // Start fully transparent; the engage fade brings the whole host in.
         host.layer?.opacity = 0
 
-        darkenLayer.frame = host.bounds
-        darkenLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        darkenLayer.backgroundColor = NSColor.black.cgColor
-        darkenLayer.opacity = 0
-        host.layer?.addSublayer(darkenLayer)
+        dimLayer.frame = host.bounds
+        dimLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        dimLayer.backgroundColor = NSColor.black.cgColor
+        dimLayer.opacity = 0
+        host.layer?.addSublayer(dimLayer)
 
-        tintLayer.frame = host.bounds
-        tintLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        // multiply: composited result = screen content × tint color. This is what
-        // turns the display red-channel-only rather than applying a flat red wash.
-        tintLayer.compositingFilter = "multiplyBlendMode"
-        host.layer?.addSublayer(tintLayer)
+        washLayer.frame = host.bounds
+        washLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        washLayer.backgroundColor = NightVisionCurve.washColor()
+        washLayer.opacity = 0
+        host.layer?.addSublayer(washLayer)
 
         window.contentView = host
+        // Order front only after the layer tree is fully configured and
+        // transparent, so the window's first composited frame is invisible.
         window.orderFrontRegardless()
     }
 
     /// Push the current intensity into both layers.
-    ///
-    /// `animated == true` is used for the initial engage: the tint/darken values are
-    /// set with no animation (so the destination color is correct from frame zero),
-    /// then the whole host layer is faded from transparent to opaque over
-    /// `fadeInDuration`. `animated == false` (slider moves) cross-fades the tint and
-    /// darken values over `slideDuration` so dragging glides instead of stepping.
     func apply(intensity: Double, animated: Bool) {
-        let tint = NightVisionCurve.tintColor(forIntensity: intensity)
-        let darken = Float(NightVisionCurve.darkenAlpha(forIntensity: intensity))
+        let wash = Float(NightVisionCurve.washAlpha(forIntensity: intensity))
+        let dim = Float(NightVisionCurve.dimAlpha(forIntensity: intensity))
 
         if animated {
-            // Engage: set the look instantly, then fade the overlay in as a whole.
+            // Engage: set the destination look instantly while the host is
+            // transparent, then fade the whole overlay in as one unit.
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            tintLayer.backgroundColor = tint
-            darkenLayer.opacity = darken
+            washLayer.opacity = wash
+            dimLayer.opacity = dim
             CATransaction.commit()
             fadeHost(to: 1, duration: Self.fadeInDuration)
         } else {
-            // Live slider move: glide the tint and darken toward their new values.
+            // Live slider move: glide both opacities to their new values.
             CATransaction.begin()
             CATransaction.setAnimationDuration(Self.slideDuration)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
-            tintLayer.backgroundColor = tint
-            darkenLayer.opacity = darken
+            washLayer.opacity = wash
+            dimLayer.opacity = dim
             CATransaction.commit()
         }
     }
 
-    /// Fade the whole overlay out over `fadeOutDuration`, then run `completion` (used to
-    /// order the window out only once it has fully faded, so disengage is never a cut).
+    /// Fade the whole overlay out, then run `completion` (orders the window out
+    /// only once fully faded, so disengage is never a cut).
     func fadeOutAndDestroy(_ completion: @escaping @MainActor () -> Void) {
         CATransaction.begin()
         CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
@@ -232,8 +219,8 @@ private final class NightVisionOverlayWindow {
         if let bounds = window.contentView?.bounds {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            darkenLayer.frame = bounds
-            tintLayer.frame = bounds
+            dimLayer.frame = bounds
+            washLayer.frame = bounds
             CATransaction.commit()
         }
     }
@@ -245,38 +232,35 @@ private final class NightVisionOverlayWindow {
 
 // MARK: - NightVision
 
-/// Astronomy-style deep red mode for dark adaptation. Much stronger than Night
-/// Shift's warmest setting, while keeping the screen readable.
+/// Astronomy-style deep red mode for dark adaptation. Stronger than Night
+/// Shift's warmest setting while keeping the screen readable.
 ///
-/// Overlay-only: one filter window per display, composited with a `multiplyBlendMode`
-/// tint layer plus a darkening layer. It NEVER writes a display gamma table, so it
-/// coexists with the XDR boost engine and the SoftwareDimmer without fighting them
-/// (and survives the gamma wipes macOS does on display reconfig, since it owns none).
-///
-/// Self-contained: owns its persistence (UserDefaults), re-asserts on display-layout
-/// changes, tears down overlays for displays that go away, and restores on quit.
+/// Overlay-only: one filter window per display (black dim + red wash, plain
+/// source-over). It NEVER writes a display gamma table, so it coexists with the
+/// XDR boost engine and the SoftwareDimmer and survives macOS gamma wipes.
 @MainActor
+@Observable
 final class NightVision {
 
     /// One filter overlay per online display while Night Vision is enabled.
+    @ObservationIgnored
     private var overlays: [CGDirectDisplayID: NightVisionOverlayWindow] = [:]
 
+    @ObservationIgnored
     private var screenObserver: NSObjectProtocol?
 
+    @ObservationIgnored
     private let logger = Logger(subsystem: "com.xdr.app", category: "NightVision")
 
     private static let enabledKey = "nightVision_enabled"
     private static let intensityKey = "nightVision_intensity"
 
-    /// Default intensity for the very first time Night Vision is ever enabled. A
-    /// gentle 35% lands in the "pleasant warm" zone so the first experience is a
-    /// soft warm shift, never a wall of red.
+    /// Default intensity for the very first enable: a gentle warm shift.
     nonisolated static let firstEnableIntensity: Double = 0.35
 
-    /// On launch, a persisted enabled state is only auto-restored if the stored
-    /// intensity is at or below this. A forgotten extreme setting (deep dark
-    /// adaptation) should not ambush the user at login, so above this the toggle is
-    /// restored OFF while the stored intensity is preserved.
+    /// A persisted enabled state is only auto-restored at launch when the
+    /// stored intensity is at or below this; a forgotten extreme setting never
+    /// ambushes the user at login.
     nonisolated static let safeRestoreCeiling: Double = 0.70
 
     init() {
@@ -285,14 +269,11 @@ final class NightVision {
 
     // MARK: - Public state
 
-    /// Whether Night Vision is currently active. Persisted.
     private(set) var isEnabled: Bool = UserDefaults.standard.bool(forKey: NightVision.enabledKey)
 
-    /// Whether the user has ever explicitly enabled Night Vision. Used so the first
-    /// enable can default to a gentle intensity rather than a saved/extreme one.
+    @ObservationIgnored
     private var hasEverEnabled: Bool = UserDefaults.standard.object(forKey: NightVision.intensityKey) != nil
 
-    /// Filter strength, 0…1. Persisted. Defaults to the gentle first-enable value.
     private(set) var intensity: Double = {
         guard UserDefaults.standard.object(forKey: NightVision.intensityKey) != nil else {
             return NightVision.firstEnableIntensity
@@ -303,10 +284,8 @@ final class NightVision {
 
     // MARK: - Pure restore rule (testable)
 
-    /// Decides whether a persisted (enabled, intensity) pair should be restored as
-    /// enabled on launch. Enabled stays true only when it was true AND the stored
-    /// intensity is within the safe ceiling; a forgotten extreme setting restores OFF.
-    /// The intensity itself is always kept so the user's chosen level is not lost.
+    /// Enabled survives a relaunch only when intensity is within the safe
+    /// ceiling; the stored intensity itself is always kept.
     nonisolated static func safeRestore(enabled: Bool, intensity: Double) -> (enabled: Bool, intensity: Double) {
         let keepEnabled = enabled && intensity <= safeRestoreCeiling
         return (keepEnabled, intensity)
@@ -315,8 +294,6 @@ final class NightVision {
     // MARK: - Public API
 
     func setEnabled(_ enabled: Bool) {
-        // First-ever enable starts at the gentle default rather than any stale value,
-        // so a user's first taste of Night Vision is a soft warm shift.
         if enabled && !hasEverEnabled {
             hasEverEnabled = true
             intensity = Self.firstEnableIntensity
@@ -333,13 +310,11 @@ final class NightVision {
         hasEverEnabled = true
         UserDefaults.standard.set(clamped, forKey: Self.intensityKey)
         guard isEnabled else { return }
-        // Slider moves glide to the new value (animated: false uses the short slide
-        // cross-fade, not the slow engage fade).
         for (_, overlay) in overlays { overlay.apply(intensity: clamped, animated: false) }
     }
 
-    /// Apply the persisted state. Call once after launch (defers overlay creation out
-    /// of init, mirroring SoftwareDimmer). A forgotten extreme setting restores OFF.
+    /// Apply the persisted state once after launch. A forgotten extreme setting
+    /// restores OFF (intensity preserved).
     func restoreOnLaunch() {
         let resolved = Self.safeRestore(enabled: isEnabled, intensity: intensity)
         intensity = resolved.intensity
@@ -350,7 +325,7 @@ final class NightVision {
         if isEnabled { applyToAllDisplays(animated: true) }
     }
 
-    /// Tear down everything cleanly on app termination. Persisted state is kept.
+    /// Tear down cleanly on app termination. Persisted state is kept.
     func shutdown() {
         if let token = screenObserver {
             NotificationCenter.default.removeObserver(token)
@@ -376,9 +351,8 @@ final class NightVision {
                 overlays[displayID] = overlay
                 isNew = true
             }
-            // Only freshly-created overlays do the slow engage fade. An overlay that
-            // already exists (e.g. a display-layout change while enabled) just updates
-            // its values so it does not re-fade from black.
+            // Only fresh overlays do the slow engage fade; survivors of a
+            // display-layout change just update without re-fading.
             overlay.apply(intensity: intensity, animated: animated && isNew)
         }
     }
@@ -409,21 +383,17 @@ final class NightVision {
 
     private func handleDisplaysChanged() {
         guard isEnabled else {
-            // Disabled: drop any leftover overlays (display change is a fine moment).
             teardownAll(fade: false)
             return
         }
 
         let online = Set(NSScreen.screens.map(\.displayID)).subtracting([0])
 
-        // Drop overlays for displays that went away (screen no longer resolvable).
         for (displayID, overlay) in overlays where !online.contains(displayID) {
             overlay.destroy()
             overlays.removeValue(forKey: displayID)
         }
 
-        // Reposition survivors and create overlays for newly-connected displays. New
-        // overlays fade in; survivors just update without re-fading.
         applyToAllDisplays(animated: true)
     }
 }
