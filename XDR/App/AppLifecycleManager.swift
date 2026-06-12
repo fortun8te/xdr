@@ -19,6 +19,10 @@ final class AppLifecycleManager {
     /// Self-contained; never enters the XDRController boost paths.
     let softwareDimmer = SoftwareDimmer()
 
+    /// Deep red dark-adaptation mode. Overlay-only; never touches gamma, so it
+    /// composites cleanly above the XDR boost and the SoftwareDimmer.
+    let nightVision = NightVision()
+
     /// Back-reference to AppState so brightness changes update the menu bar icon.
     var appState: AppState?
 
@@ -232,6 +236,20 @@ final class AppLifecycleManager {
         // Apply any persisted software-dim levels now that the app has launched.
         // (Deferred out of SoftwareDimmer.init so no overlay window is created early.)
         softwareDimmer.reassertAll()
+
+        // Restore Night Vision overlays now the app has launched (deferred out of
+        // NightVision.init so no overlay window is created early).
+        nightVision.restoreOnLaunch()
+    }
+
+    /// Toggle Night Vision on/off across all displays.
+    func setNightVisionEnabled(_ enabled: Bool) {
+        nightVision.setEnabled(enabled)
+    }
+
+    /// Set Night Vision intensity (0…1) across all displays.
+    func setNightVisionIntensity(_ value: Double) {
+        nightVision.setIntensity(value)
     }
 
     func toggleXDRForActiveDisplay() {
@@ -353,6 +371,7 @@ final class AppLifecycleManager {
         sleepWakeManager.shutdown()
         xdrController.shutdown()
         softwareDimmer.shutdown()
+        nightVision.shutdown()
     }
 
     private func cancelAllRamps() {

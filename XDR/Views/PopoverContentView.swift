@@ -26,6 +26,11 @@ struct PopoverContentView: View {
     @State private var settingsHovered = false
     @State private var quitHovered = false
 
+    // Night Vision UI mirror. Seeded from the engine in onAppear; the engine is the
+    // source of truth and owns persistence.
+    @State private var nightVisionEnabled = false
+    @State private var nightVisionIntensity = 0.7
+
     @AppStorage("userName") private var userName = ""
     @AppStorage("autoDisableOnBattery") private var autoDisable = false
     @AppStorage("batteryThreshold") private var batteryThreshold = 20
@@ -112,6 +117,10 @@ struct PopoverContentView: View {
         .padding(Sp.lg)
         .frame(width: 320)
         .background(.ultraThinMaterial)
+        .onAppear {
+            nightVisionEnabled = lifecycle.nightVision.isEnabled
+            nightVisionIntensity = lifecycle.nightVision.intensity
+        }
     }
 
     // MARK: - Displays Panel
@@ -136,6 +145,19 @@ struct PopoverContentView: View {
                                 surface: .popover)
                 }
             }
+
+            NightVisionSection(
+                isEnabled: nightVisionEnabled,
+                intensity: nightVisionIntensity,
+                onToggle: { enabled in
+                    nightVisionEnabled = enabled
+                    lifecycle.setNightVisionEnabled(enabled)
+                },
+                onSetIntensity: { value in
+                    nightVisionIntensity = value
+                    lifecycle.setNightVisionIntensity(value)
+                }
+            )
         }
     }
 

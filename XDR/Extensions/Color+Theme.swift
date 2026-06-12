@@ -7,5 +7,8 @@ extension Color {
 
     // Gradient for XDR range on slider
     static let xdrGradientEnd = Color(red: 0.99, green: 0.90, blue: 0.54)   // #FDE68A
+
+    // Deep red accent for Night Vision
+    static let nightVisionRed = Color(red: 0.85, green: 0.13, blue: 0.13)   // #D92121
 }
 
