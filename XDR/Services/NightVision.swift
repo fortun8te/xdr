@@ -272,11 +272,20 @@ final class NightVision {
     }
 
     /// Re-fold the latest dim scales into gamma. Called when a dim level changes
-    /// while Night Vision owns the LUT.
+    /// while Night Vision owns the LUT. Coalesced to one gamma pass per frame so
+    /// a fast dim-slider drag does not rewrite every display's LUT on each tick
+    /// (that was the dimming lag).
     func reapplyGamma() {
-        guard isEnabled else { return }
-        applyEverywhere(intensity: intensity)
+        guard isEnabled, !reapplyScheduled else { return }
+        reapplyScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+            guard let self else { return }
+            self.reapplyScheduled = false
+            guard self.isEnabled else { return }
+            self.applyEverywhere(intensity: self.intensity)
+        }
     }
+    @ObservationIgnored private var reapplyScheduled = false
 
     func restoreOnLaunch() {
         let resolved = Self.safeRestore(enabled: isEnabled, intensity: intensity)
