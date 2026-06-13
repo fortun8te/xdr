@@ -273,9 +273,18 @@ final class AppLifecycleManager {
                     setBrightness(XDRConstants.sdrMaxBrightness, for: display.id)
                 }
             }
-            // Suspend the dimmer: identity gamma, overlays gone, levels kept.
-            softwareDimmer.suspended = true
-            softwareDimmer.restoreAll()
+            // Hand the gamma tables to Night Vision but KEEP dimming working:
+            // the dimmer stops writing gamma (NV folds the dim scale into its
+            // own red gamma) yet still manages its deep-end black overlay, so
+            // other monitors can still be dimmed while Night Vision is on.
+            nightVision.dimScale = { [weak self] id in
+                self?.softwareDimmer.gammaScale(for: id) ?? 1.0
+            }
+            softwareDimmer.onDimChangedWhileSuspended = { [weak self] _ in
+                self?.nightVision.reapplyGamma()
+            }
+            softwareDimmer.gammaSuspended = true
+            softwareDimmer.reassertAll()   // re-assert overlays only (no gamma)
             nightVision.setEnabled(true)
         } else {
             nightVision.setEnabled(false)
@@ -285,8 +294,9 @@ final class AppLifecycleManager {
                 try? await Task.sleep(for: .seconds(0.7))
                 guard let self, !self.nightVision.isEnabled else { return }
                 self.nightVisionOwnsGamma = false
-                self.softwareDimmer.suspended = false
-                self.softwareDimmer.reassertAll()
+                self.softwareDimmer.gammaSuspended = false
+                self.softwareDimmer.onDimChangedWhileSuspended = nil
+                self.softwareDimmer.reassertAll()   // dimmer takes its gamma back
                 let parked = self.nightVisionSuspendedBoosts
                 self.nightVisionSuspendedBoosts = [:]
                 for (displayID, level) in parked {

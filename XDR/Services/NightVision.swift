@@ -187,6 +187,12 @@ final class NightVision {
     @ObservationIgnored
     var isGammaBusy: (CGDirectDisplayID) -> Bool = { _ in false }
 
+    /// Dim scale (0...1, 1 = none) for a display, injected by AppLifecycleManager
+    /// from the SoftwareDimmer. Folded into the gamma write so Night Vision red
+    /// and software dimming COMPOSE on one LUT instead of fighting over it.
+    @ObservationIgnored
+    var dimScale: (CGDirectDisplayID) -> Double = { _ in 1.0 }
+
     /// Displays we currently drive via gamma (so we only ever reset our own).
     @ObservationIgnored
     private var gammaDisplays: Set<CGDirectDisplayID> = []
@@ -265,6 +271,13 @@ final class NightVision {
         applyEverywhere(intensity: clamped)
     }
 
+    /// Re-fold the latest dim scales into gamma. Called when a dim level changes
+    /// while Night Vision owns the LUT.
+    func reapplyGamma() {
+        guard isEnabled else { return }
+        applyEverywhere(intensity: intensity)
+    }
+
     func restoreOnLaunch() {
         let resolved = Self.safeRestore(enabled: isEnabled, intensity: intensity)
         intensity = resolved.intensity
@@ -305,9 +318,12 @@ final class NightVision {
     }
 
     private func applyGamma(intensity i: Double, for id: CGDirectDisplayID) {
-        let r = Float(NightVisionCurve.redMax(forIntensity: i))
-        let g = Float(NightVisionCurve.greenMax(forIntensity: i))
-        let b = Float(NightVisionCurve.blueMax(forIntensity: i))
+        // Compose with software dimming: multiply each channel ceiling by the
+        // display's dim scale, so a dimmed monitor stays dim AND red.
+        let dim = max(0, min(1, dimScale(id)))
+        let r = Float(NightVisionCurve.redMax(forIntensity: i) * dim)
+        let g = Float(NightVisionCurve.greenMax(forIntensity: i) * dim)
+        let b = Float(NightVisionCurve.blueMax(forIntensity: i) * dim)
         // output = min + (max-min) * input^(1/gamma); gamma 1 => straight ceiling scale.
         let err = CGSetDisplayTransferByFormula(id,
                                                 0, r, 1,

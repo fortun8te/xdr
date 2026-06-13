@@ -97,9 +97,21 @@ private final class DimOverlayWindow {
 @MainActor
 final class SoftwareDimmer {
 
-    /// True while Night Vision owns the displays. Levels can still be changed
-    /// and persist, but nothing is applied to gamma or overlays until resumed.
-    var suspended = false
+    /// True while Night Vision owns the gamma tables. The dimmer keeps managing
+    /// its deep-end black OVERLAY (so dimming still works visually), but stops
+    /// writing gamma; Night Vision folds the dim scale into its own gamma write
+    /// so the two compose on one LUT instead of fighting over it.
+    var gammaSuspended = false
+
+    /// Called whenever a dim level changes while gamma is suspended, so Night
+    /// Vision can re-fold the new scale into its gamma. Set by AppLifecycleManager.
+    var onDimChangedWhileSuspended: ((CGDirectDisplayID) -> Void)?
+
+    /// The gamma output scale this display's current dim level wants (1.0 = none).
+    /// Night Vision multiplies its channel ceilings by this to compose the dim in.
+    func gammaScale(for displayID: CGDirectDisplayID) -> Double {
+        DimCurve.gammaScale(forLevel: brightness(for: displayID))
+    }
 
     /// Per-display dim level, 0…1 (1.0 = native brightness). Source of truth.
     private var levels: [CGDirectDisplayID: Double] = [:]
@@ -132,14 +144,19 @@ final class SoftwareDimmer {
         let clamped = min(max(level, 0), 1)
         levels[displayID] = clamped
         persist(clamped, for: displayID)
-        guard !suspended else { return }   // applied on resume via reassertAll()
+        if gammaSuspended {
+            // Night Vision owns gamma: apply only our overlay here, and let it
+            // re-fold the new dim scale into its gamma write.
+            applyOverlay(alpha: DimCurve.overlayAlpha(forLevel: clamped), for: displayID)
+            onDimChangedWhileSuspended?(displayID)
+            return
+        }
         apply(clamped, for: displayID)
     }
 
     /// Re-applies every active dim. Call after the display layout or wake state
     /// changes, since macOS resets gamma tables on those events.
     func reassertAll() {
-        guard !suspended else { return }
         let online = Self.onlineDisplayIDs()
         for (displayID, level) in levels where level < 1.0 && online.contains(displayID) {
             apply(level, for: displayID)
@@ -194,7 +211,6 @@ final class SoftwareDimmer {
     }
 
     private func handleDisplaysChanged() {
-        guard !suspended else { return }
         let online = Self.onlineDisplayIDs()
 
         // Reposition overlays that are still onscreen; drop the ones that went away.
@@ -230,18 +246,22 @@ final class SoftwareDimmer {
     // MARK: - Application
 
     private func apply(_ level: Double, for displayID: CGDirectDisplayID) {
-        if level >= 1.0 {
-            resetGamma(for: displayID)
-        } else {
-            let scale = Float(DimCurve.gammaScale(forLevel: level))
-            let err = CGSetDisplayTransferByFormula(
-                displayID,
-                0, scale, 1,
-                0, scale, 1,
-                0, scale, 1
-            )
-            if err != .success {
-                logger.error("gamma set failed for \(displayID, privacy: .public): \(err.rawValue)")
+        // While gamma is suspended (Night Vision owns the LUT), only the overlay
+        // veil is ours; gamma is composed by Night Vision instead.
+        if !gammaSuspended {
+            if level >= 1.0 {
+                resetGamma(for: displayID)
+            } else {
+                let scale = Float(DimCurve.gammaScale(forLevel: level))
+                let err = CGSetDisplayTransferByFormula(
+                    displayID,
+                    0, scale, 1,
+                    0, scale, 1,
+                    0, scale, 1
+                )
+                if err != .success {
+                    logger.error("gamma set failed for \(displayID, privacy: .public): \(err.rawValue)")
+                }
             }
         }
         applyOverlay(alpha: DimCurve.overlayAlpha(forLevel: level), for: displayID)
