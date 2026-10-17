@@ -18,6 +18,7 @@ final class AppLifecycleManager {
     /// Brightness engine for displays with no hardware brightness control.
     /// Self-contained; never enters the XDRController boost paths.
     let softwareDimmer = SoftwareDimmer()
+    let ternDDC = TernDDCController()
 
     /// Deep red dark-adaptation mode. Overlay-only; never touches gamma, so it
     /// composites cleanly above the XDR boost and the SoftwareDimmer.
@@ -82,6 +83,17 @@ final class AppLifecycleManager {
 
         // Register as shared instance for App Intents access
         Self.shared = self
+        ternDDC.onResult = { [weak self] id, result in
+            guard let self, let idx = self.appState?.displays.firstIndex(where: { $0.id == id }) else { return }
+            switch result {
+            case .success(let actual):
+                self.appState?.displays[idx].brightness = actual
+                self.appState?.displays[idx].controlMessage = nil
+            case .failure(let error):
+                self.appState?.displays[idx].brightness = self.ternDDC.brightness(for: id)
+                self.appState?.displays[idx].controlMessage = error.localizedDescription
+            }
+        }
 
         requestNotificationPermission()
         setupKeyboardShortcuts()
@@ -173,7 +185,10 @@ final class AppLifecycleManager {
                 let freshDisplays = self.displayManager.displays
                 appState.displays = freshDisplays.map { fresh in
                     var display = fresh
-                    if fresh.supportsHardwareBrightness == false {
+                    if fresh.supportsDDCBrightness {
+                        display.brightness = self.ternDDC.brightness(for: fresh.id)
+                        self.ternDDC.refresh(fresh.id)
+                    } else if fresh.supportsHardwareBrightness == false {
                         // Software-dimmed panel: the dimmer is the source of truth
                         // (it re-asserts its own gamma on screen-parameter changes).
                         display.brightness = self.softwareDimmer.brightness(for: fresh.id)
@@ -204,6 +219,11 @@ final class AppLifecycleManager {
         }
 
         for display in displayManager.displays {
+            if display.supportsDDCBrightness {
+                softwareDimmer.releaseForHardwareControl(display.id)
+                ternDDC.refresh(display.id)
+                continue
+            }
             // Software-dimmed panels: pull the saved dim level from the dimmer
             // (which already re-applied its gamma on init) and sync the model.
             if display.supportsHardwareBrightness == false {
@@ -313,7 +333,7 @@ final class AppLifecycleManager {
 
     func toggleXDRForActiveDisplay() {
         guard let display = activeDisplay() else { return }
-        guard display.supportsHardwareBrightness else { return } // no XDR toggle for software-dimmed panels
+        guard !display.supportsDDCBrightness, display.supportsHardwareBrightness else { return } // no XDR toggle for software-dimmed panels
         let current = xdrController.getBrightness(for: display.id)
 
         if current > XDRConstants.sdrMaxBrightness {
@@ -329,6 +349,10 @@ final class AppLifecycleManager {
     func adjustBrightness(by delta: Double) {
         guard let display = activeDisplay() else { return }
 
+        if display.supportsDDCBrightness {
+            setBrightness(ternDDC.brightness(for: display.id) + delta, for: display.id)
+            return
+        }
         // Software-dimmed panels live entirely in 0…1 (1.0 = native brightness).
         if display.supportsHardwareBrightness == false {
             let current = softwareDimmer.brightness(for: display.id)
@@ -356,6 +380,14 @@ final class AppLifecycleManager {
     }
 
     func setBrightness(_ value: Double, for displayID: CGDirectDisplayID) {
+        if TernDisplayIdentity.matches(displayID) {
+            ternDDC.setBrightness(value, for: displayID)
+            if let idx = appState?.displays.firstIndex(where: { $0.id == displayID }) {
+                appState?.displays[idx].brightness = Double(TernDisplayIdentity.percent(value)) / 100
+                appState?.displays[idx].controlMessage = nil
+            }
+            return
+        }
         // Software-dimmed panels take a separate path that never touches the XDR
         // boost machinery. Their range is 0…1 (1.0 = native brightness).
         if isSoftwareDimmed(displayID) {
@@ -404,6 +436,10 @@ final class AppLifecycleManager {
         }
     }
 
+    func finishBrightnessAdjustment(for displayID: CGDirectDisplayID) {
+        ternDDC.finishAdjustment(for: displayID)
+    }
+
     /// Called by the UI when the user toggles `Settings → Boost mode`.
     /// Re-applies the current brightness for every display that's currently in XDR range,
     /// which forces the new mode's code path (gamma vs overlay) to engage immediately
@@ -431,6 +467,7 @@ final class AppLifecycleManager {
             NotificationCenter.default.removeObserver(token)
             displayParamsObserver = nil
         }
+        ternDDC.shutdown()
         sleepWakeManager.shutdown()
         xdrController.shutdown()
         softwareDimmer.shutdown()
@@ -445,6 +482,8 @@ final class AppLifecycleManager {
     // MARK: - Smooth Transition
 
     private func animateBrightness(from start: Double, to end: Double, for displayID: CGDirectDisplayID) {
+        // DDC hardware writes are coalesced, not animated at 60 writes per second.
+        if TernDisplayIdentity.matches(displayID) { setBrightness(end, for: displayID); return }
         // Fix 4: Respect smoothTransitions flag.
         guard appState?.smoothTransitions != false else {
             setBrightness(end, for: displayID)
@@ -608,7 +647,8 @@ final class AppLifecycleManager {
 
     /// Current brightness for a display, read from whichever engine owns it.
     private func currentBrightness(for displayID: CGDirectDisplayID) -> Double {
-        isSoftwareDimmed(displayID)
+        if TernDisplayIdentity.matches(displayID) { return ternDDC.brightness(for: displayID) }
+        return isSoftwareDimmed(displayID)
             ? softwareDimmer.brightness(for: displayID)
             : xdrController.getBrightness(for: displayID)
     }

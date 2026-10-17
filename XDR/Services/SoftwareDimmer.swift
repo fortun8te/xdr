@@ -154,6 +154,14 @@ final class SoftwareDimmer {
         apply(clamped, for: displayID)
     }
 
+    /// Remove a dim level inherited from an older version before DDC owns this panel.
+    func releaseForHardwareControl(_ displayID: CGDirectDisplayID) {
+        levels.removeValue(forKey: displayID)
+        UserDefaults.standard.removeObject(forKey: key(for: displayID))
+        if let overlay = overlays.removeValue(forKey: displayID) { overlay.destroy() }
+        resetGamma(for: displayID)
+    }
+
     /// Re-applies every active dim. Call after the display layout or wake state
     /// changes, since macOS resets gamma tables on those events.
     func reassertAll() {
@@ -246,6 +254,7 @@ final class SoftwareDimmer {
     // MARK: - Application
 
     private func apply(_ level: Double, for displayID: CGDirectDisplayID) {
+        guard !TernDisplayIdentity.matches(displayID) else { return }
         // While gamma is suspended (Night Vision owns the LUT), only the overlay
         // veil is ours; gamma is composed by Night Vision instead.
         if !gammaSuspended {
@@ -336,7 +345,7 @@ final class SoftwareDimmer {
         guard CGGetOnlineDisplayList(0, nil, &count) == .success else { return [] }
         var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
         guard CGGetOnlineDisplayList(count, &ids, &count) == .success else { return [] }
-        return Set(ids.prefix(Int(count)))
+        return Set(ids.prefix(Int(count)).filter { !TernDisplayIdentity.matches($0) })
     }
 
     private static func screen(for displayID: CGDirectDisplayID) -> NSScreen? {

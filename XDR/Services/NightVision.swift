@@ -29,10 +29,12 @@ enum NightVisionCurve {
     /// Green channel ceiling at full intensity. A small floor (not zero) keeps a
     /// trace of green so anti-aliased text edges and warm UI stay legible rather
     /// than collapsing to a single flat red.
-    static let minGreen: Double = 0.12
+    static let minGreen: Double = 0.10
     /// Blue channel ceiling at full intensity. Lower than green: blue light is
-    /// the worst for dark adaptation, so it is suppressed hardest.
-    static let minBlue: Double = 0.05
+    /// the worst for dark adaptation, so it is suppressed hardest. Pushed to the
+    /// readability floor so saturated greens/blues (e.g. a bright logo) dim as far
+    /// as the per-channel gamma path allows before edges start to disappear.
+    static let minBlue: Double = 0.03
     /// Red channel ceiling at full intensity. Kept high so the surviving image is
     /// bright red, with a gentle dim at the very top for comfort.
     static let minRed: Double = 0.80
@@ -204,6 +206,15 @@ final class NightVision {
     @ObservationIgnored private var wakeObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var wakeReassertTask: Task<Void, Never>?
     @ObservationIgnored private var rampTask: Task<Void, Never>?
+    /// Coalesces the burst of screen-parameter notifications that HDR/SDR video
+    /// transitions fire (the compositor toggles EDR on cursor moves and play/pause),
+    /// so we re-apply gamma ONCE per burst instead of fighting it frame-by-frame.
+    @ObservationIgnored private var reassertDebounceTask: Task<Void, Never>?
+    /// Low-frequency drift watchdog: macOS silently overrides our gamma when a video
+    /// engages EDR (the gamma table and the EDR EOTF are mutually exclusive). The
+    /// notification does not always fire for these, so we poll and re-assert ONLY when
+    /// the table has actually drifted back toward identity. No drift => no write => no flicker.
+    @ObservationIgnored private var watchdogTask: Task<Void, Never>?
 
     @ObservationIgnored private let logger = Logger(subsystem: "com.xdr.app", category: "NightVision")
 
@@ -255,7 +266,9 @@ final class NightVision {
         UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
         if enabled {
             ramp(to: intensity, over: Self.fadeInDuration)
+            startWatchdog()
         } else {
+            stopWatchdog()
             ramp(to: 0, over: Self.fadeOutDuration) { [weak self] in self?.teardownAll() }
         }
     }
@@ -294,12 +307,17 @@ final class NightVision {
             isEnabled = resolved.enabled
             UserDefaults.standard.set(isEnabled, forKey: Self.enabledKey)
         }
-        if isEnabled { ramp(to: intensity, over: Self.fadeInDuration) }
+        if isEnabled {
+            ramp(to: intensity, over: Self.fadeInDuration)
+            startWatchdog()
+        }
     }
 
     func shutdown() {
         rampTask?.cancel()
         wakeReassertTask?.cancel()
+        reassertDebounceTask?.cancel()
+        stopWatchdog()
         if let token = screenObserver { NotificationCenter.default.removeObserver(token) }
         for token in wakeObservers { NSWorkspace.shared.notificationCenter.removeObserver(token) }
         wakeObservers.removeAll()
@@ -418,8 +436,66 @@ final class NightVision {
 
     private func handleDisplaysChanged() {
         guard isEnabled else { teardownAll(); return }
-        // macOS just wiped gamma; re-apply at the live intensity to every display.
-        applyEverywhere(intensity: intensity)
+        // Debounce: a video starting/stopping (or the compositor toggling EDR as the
+        // cursor moves over HDR content) fires this notification in rapid bursts. Applying
+        // gamma on every one is exactly the "gamma goes weird while watching a video"
+        // flicker. Coalesce to a single re-apply ~250 ms after the burst settles.
+        reassertDebounceTask?.cancel()
+        reassertDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(0.25))
+            guard !Task.isCancelled, let self, self.isEnabled else { return }
+            self.applyEverywhere(intensity: self.intensity)
+        }
+    }
+
+    // MARK: - Drift watchdog
+
+    /// Starts (or restarts) the watchdog while Night Vision is enabled. Cheap: it reads
+    /// back each owned display's gamma table every ~2 s and only rewrites the ones macOS
+    /// has clobbered (e.g. a video that engaged EDR reset the table toward identity).
+    private func startWatchdog() {
+        watchdogTask?.cancel()
+        watchdogTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self, self.isEnabled else { return }
+                self.reassertDriftedDisplays()
+            }
+        }
+    }
+
+    private func stopWatchdog() {
+        watchdogTask?.cancel()
+        watchdogTask = nil
+    }
+
+    /// Re-applies gamma only to displays whose green ceiling has drifted back up toward
+    /// identity (1.0) while we expect it suppressed — the signature of an EDR override.
+    private func reassertDriftedDisplays() {
+        let expectedGreen = NightVisionCurve.greenMax(forIntensity: currentAppliedIntensity)
+        // Only meaningful to check when we actually expect suppression below identity.
+        guard expectedGreen < 0.95 else { return }
+        for id in gammaDisplays where !isGammaBusy(id) {
+            guard let actualGreen = Self.readGreenCeiling(id) else { continue }
+            // Tolerance: if the live green ceiling sits well above what we wrote, macOS
+            // reset it. 0.85 is comfortably above any value our curve produces below 0.95.
+            if actualGreen > 0.85 {
+                applyGamma(intensity: currentAppliedIntensity, for: id)
+            }
+        }
+    }
+
+    /// Reads back the top entry of a display's green gamma channel (its output ceiling).
+    /// Returns nil if the table can't be read. Used purely to detect OS overrides.
+    private static func readGreenCeiling(_ id: CGDirectDisplayID) -> Double? {
+        let capacity: UInt32 = 256
+        var red = [CGGammaValue](repeating: 0, count: Int(capacity))
+        var green = [CGGammaValue](repeating: 0, count: Int(capacity))
+        var blue = [CGGammaValue](repeating: 0, count: Int(capacity))
+        var sampleCount: UInt32 = 0
+        let err = CGGetDisplayTransferByTable(id, capacity, &red, &green, &blue, &sampleCount)
+        guard err == .success, sampleCount > 0 else { return nil }
+        return Double(green[Int(sampleCount) - 1])
     }
 
     private func scheduleWakeReassert() {

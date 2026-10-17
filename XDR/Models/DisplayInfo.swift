@@ -13,6 +13,9 @@ struct DisplayInfo: Identifiable, Equatable, Hashable {
     /// dimmed in software (gamma + overlay) instead. See SoftwareDimmer.
     var supportsHardwareBrightness: Bool = true
 
+    var supportsDDCBrightness: Bool = false
+    var controlMessage: String?
+
     var currentLevel: Double {
         XDRConstants.level(forBrightness: brightness)
     }

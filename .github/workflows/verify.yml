@@ -1,0 +1,33 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Use newest installed Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)" && swift --version
+      - name: Install XcodeGen
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Build DDC helper from source
+        run: ./scripts/build-ddc.sh
+      - name: Verify live DDC scheduling without hardware
+        run: ./tools/test-tern-ddc.sh
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build and run tests
+        run: xcodebuild -project XDR.xcodeproj -scheme XDR -destination 'platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO test

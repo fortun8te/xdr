@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		036E49C52C337284ABFE968F /* ScriptingCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 231B9B79F504E1823EA23CBF /* ScriptingCommands.swift */; };
 		069BA3BE688EC4840C1E59FD /* PermissionsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A15109A7865267A6A1594DA /* PermissionsService.swift */; };
+		0A8E9B2CE760FBFD4FFC5880 /* m1ddc in Resources */ = {isa = PBXBuildFile; fileRef = 34D6E17B0EF77BC026C80EF7 /* m1ddc */; };
 		0EFA299A1A8DF233336D853A /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 905B2F4F82E2798CF76C4441 /* MainWindowView.swift */; };
 		0F370EF1333DB5FFFC679A2F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ABAEA8EF801787B09F7CB7E4 /* Assets.xcassets */; };
 		1EDC5DEFB03F569F9593C1C4 /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = 035EEBC0742526B0D25C9270 /* LaunchAtLogin */; };
@@ -17,6 +18,7 @@
 		2FCA03A92BA593151074460A /* AppLifecycleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D589A914A232CB80281674A /* AppLifecycleManager.swift */; };
 		2FE22BF1109379B04E4898FF /* AppShellBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CAF87381A90380712D93195 /* AppShellBackground.swift */; };
 		30E2AEFF31BCBF1D3253021A /* NSScreen+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B6F23CADBB3E546414FCD2 /* NSScreen+Extensions.swift */; };
+		3791B50C7744E340CE227009 /* TernDDCController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFCC2A37EF967148459CC306 /* TernDDCController.swift */; };
 		37A719CF780193E2FF5E06E5 /* BatteryMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA2E47B516ED9D2DEC20D66D /* BatteryMonitor.swift */; };
 		3C0965A6025BAFD980CA4F93 /* XDR.sdef in Resources */ = {isa = PBXBuildFile; fileRef = 3BC0DE212A5711EA4C22B123 /* XDR.sdef */; };
 		4137BD63BAB888754C1FC2C7 /* DisplayInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6F90944170E8DEA57C0B236 /* DisplayInfo.swift */; };
@@ -41,6 +43,7 @@
 		E0AEA9B772948882AD78F06F /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1472DD96F026FD10691877B1 /* Spacing.swift */; };
 		E0F926D74F493367D099E735 /* SoftwareDimmerMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 732C163B07C2516F63D2E33D /* SoftwareDimmerMathTests.swift */; };
 		EAD0D8507FA66A57EB2DF8C2 /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F560212FCC32EE70CDCA078C /* Color+Theme.swift */; };
+		ECF8D90F4F745074F77828C5 /* m1ddc-LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = 120B30F449FD1366E384C749 /* m1ddc-LICENSE */; };
 		EE97EAF435117802E0611023 /* XDRApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D0460427007C16B8C7C331 /* XDRApp.swift */; };
 		EF7263BCE33675523835C27F /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4604E0EC82B489930AEBE03A /* DisplayManager.swift */; };
 		F24EA592645BE9831130A8BF /* NightVisionMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 414D1B387B1DB6B776FBF7B5 /* NightVisionMathTests.swift */; };
@@ -62,6 +65,7 @@
 		0B87A0D5B93E8F04C478EEA8 /* NightVisionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightVisionSection.swift; sourceTree = "<group>"; };
 		0CDDA49B5489A0ED675D1E7F /* XDRBoostMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XDRBoostMeter.swift; sourceTree = "<group>"; };
 		0D589A914A232CB80281674A /* AppLifecycleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleManager.swift; sourceTree = "<group>"; };
+		120B30F449FD1366E384C749 /* m1ddc-LICENSE */ = {isa = PBXFileReference; path = "m1ddc-LICENSE"; sourceTree = "<group>"; };
 		1472DD96F026FD10691877B1 /* Spacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spacing.swift; sourceTree = "<group>"; };
 		1950549E628E002A8304F0F2 /* XDRController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XDRController.swift; sourceTree = "<group>"; };
 		1A7FB7DE57909519DE48335B /* XDR.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XDR.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -72,6 +76,7 @@
 		28E86CA808DFC7BFDBB58724 /* BrightnessPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessPreset.swift; sourceTree = "<group>"; };
 		2BC2C2D661FD42069D3F48D1 /* DimSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimSlider.swift; sourceTree = "<group>"; };
 		34703C71A208BAAF803ACA7C /* BrightnessSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrightnessSupport.swift; sourceTree = "<group>"; };
+		34D6E17B0EF77BC026C80EF7 /* m1ddc */ = {isa = PBXFileReference; path = m1ddc; sourceTree = "<group>"; };
 		3676A36619E924708A1B6C69 /* KeyboardShortcutNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcutNames.swift; sourceTree = "<group>"; };
 		3A3BF2A9056D44CA6421AC26 /* PopoverContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PopoverContentView.swift; sourceTree = "<group>"; };
 		3B899D9DCE84104A7CBE0B1E /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
@@ -91,6 +96,7 @@
 		8FDA6EBDB731151A7CC777B7 /* SleepWakeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepWakeManager.swift; sourceTree = "<group>"; };
 		905B2F4F82E2798CF76C4441 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
 		ABAEA8EF801787B09F7CB7E4 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AFCC2A37EF967148459CC306 /* TernDDCController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TernDDCController.swift; sourceTree = "<group>"; };
 		B77070FE33E2849232150D7D /* NightVision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NightVision.swift; sourceTree = "<group>"; };
 		B7AC3AB6B6E1F225530928CC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C407138E149A1B0A35AEA314 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
@@ -175,6 +181,7 @@
 				231B9B79F504E1823EA23CBF /* ScriptingCommands.swift */,
 				8FDA6EBDB731151A7CC777B7 /* SleepWakeManager.swift */,
 				E1D3E36CBF5FCB3C6410843C /* SoftwareDimmer.swift */,
+				AFCC2A37EF967148459CC306 /* TernDDCController.swift */,
 				1950549E628E002A8304F0F2 /* XDRController.swift */,
 			);
 			path = Services;
@@ -214,6 +221,8 @@
 			children = (
 				ABAEA8EF801787B09F7CB7E4 /* Assets.xcassets */,
 				B7AC3AB6B6E1F225530928CC /* Info.plist */,
+				34D6E17B0EF77BC026C80EF7 /* m1ddc */,
+				120B30F449FD1366E384C749 /* m1ddc-LICENSE */,
 				6A1CB907B41F85F5135C6027 /* XDR.entitlements */,
 				3BC0DE212A5711EA4C22B123 /* XDR.sdef */,
 			);
@@ -340,6 +349,8 @@
 			files = (
 				0F370EF1333DB5FFFC679A2F /* Assets.xcassets in Resources */,
 				3C0965A6025BAFD980CA4F93 /* XDR.sdef in Resources */,
+				0A8E9B2CE760FBFD4FFC5880 /* m1ddc in Resources */,
+				ECF8D90F4F745074F77828C5 /* m1ddc-LICENSE in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -377,6 +388,7 @@
 				AFDA17D95B5846FDFB6B45E5 /* SleepWakeManager.swift in Sources */,
 				42E756A31FC4277D99930A80 /* SoftwareDimmer.swift in Sources */,
 				E0AEA9B772948882AD78F06F /* Spacing.swift in Sources */,
+				3791B50C7744E340CE227009 /* TernDDCController.swift in Sources */,
 				C3E06EAD1AA2E36AE561658C /* Typography.swift in Sources */,
 				EE97EAF435117802E0611023 /* XDRApp.swift in Sources */,
 				2D96EE984461DB1B20CA91A3 /* XDRBoostMeter.swift in Sources */,
@@ -454,7 +466,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202610171705;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -474,7 +486,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.2.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -482,7 +494,7 @@
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.10;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
@@ -521,7 +533,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 202610171705;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -535,14 +547,14 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 5.10;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -560,7 +572,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xdr.XDRTests;
 				SDKROOT = macosx;
-				SWIFT_VERSION = 5.10;
+				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XDR.app/Contents/MacOS/XDR";
 			};
 			name = Debug;
@@ -579,7 +591,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.xdr.XDRTests;
 				SDKROOT = macosx;
-				SWIFT_VERSION = 5.10;
+				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XDR.app/Contents/MacOS/XDR";
 			};
 			name = Release;

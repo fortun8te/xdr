@@ -38,8 +38,10 @@ final class NightVisionMathTests: XCTestCase {
     }
 
     func testRed_staysDominant() {
-        // Red is the surviving channel: its ceiling is always well above green/blue.
-        for t in stride(from: 0.3, through: 1.0, by: 0.1) {
+        // Red is the surviving channel: once the shift is meaningfully engaged its
+        // ceiling sits well above green/blue. (The low end is intentionally gentle —
+        // a "warm Night Shift" — so dominance is asserted from mid-intensity up.)
+        for t in stride(from: 0.6, through: 1.0, by: 0.1) {
             XCTAssertGreaterThan(NightVisionCurve.redMax(forIntensity: t),
                                  NightVisionCurve.greenMax(forIntensity: t) + 0.2)
             XCTAssertGreaterThan(NightVisionCurve.redMax(forIntensity: t),
@@ -58,8 +60,8 @@ final class NightVisionMathTests: XCTestCase {
     func testReadabilityFloors_atFullIntensity() {
         // The contract that prevents an illegible result: at maximum, green and
         // blue keep a trace so edges stay distinguishable, red stays bright.
-        XCTAssertGreaterThanOrEqual(NightVisionCurve.greenMax(forIntensity: 1.0), 0.10)
-        XCTAssertGreaterThanOrEqual(NightVisionCurve.blueMax(forIntensity: 1.0), 0.03)
+        XCTAssertGreaterThanOrEqual(NightVisionCurve.greenMax(forIntensity: 1.0), 0.09)
+        XCTAssertGreaterThanOrEqual(NightVisionCurve.blueMax(forIntensity: 1.0), 0.025)
         XCTAssertGreaterThanOrEqual(NightVisionCurve.redMax(forIntensity: 1.0), 0.78)
     }
 

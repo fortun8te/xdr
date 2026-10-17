@@ -15,29 +15,15 @@ final class DisplayManager {
 
     private init() {
         refreshDisplays()
-        registerCallbacks()
     }
 
     // No deinit needed — DisplayManager is a singleton that lives for the app's lifetime.
     // Removing deinit avoids actor-isolation issues with CGDisplayRemoveReconfigurationCallback
     // and Unmanaged.passUnretained(self) from nonisolated context.
 
-    // MARK: - Callback Registration
-
-    private func registerCallbacks() {
-        // AppKit notification is sufficient for display config changes; the IOKit
-        // CGDisplayRegisterReconfigurationCallback is redundant and produces duplicate
-        // refreshes — removed.
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshDisplays()
-            }
-        }
-    }
+    // AppLifecycleManager owns the screen-change notification and snapshots the old
+    // IDs before refreshing. A second observer here could refresh first, hiding
+    // newly connected displays from that restoration pass.
 
     // MARK: - Display Enumeration
 
@@ -56,19 +42,21 @@ final class DisplayManager {
 
             let name = screen?.localizedName ?? "Unknown Display"
             let potentialEDR = screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1.0
-            let isXDR = potentialEDR > 1.0
+            let isTern = TernDisplayIdentity.matches(displayID)
+            let isXDR = !isTern && potentialEDR > 1.0
             let maxEDR = screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1.0
             let maxNits = Self.determineMaxNits(isXDR: isXDR)
-            let supportsHardware = BrightnessSupport.hasHardwareBrightness(displayID)
+            let supportsHardware = isTern || BrightnessSupport.hasHardwareBrightness(displayID)
 
             return DisplayInfo(
                 id: displayID,
-                name: name,
+                name: isTern ? "Tern 16-inch 4K" : name,
                 isBuiltIn: isBuiltIn,
                 isXDR: isXDR,
                 maxNits: maxNits,
                 maxEDR: maxEDR,
-                supportsHardwareBrightness: supportsHardware
+                supportsHardwareBrightness: supportsHardware,
+                supportsDDCBrightness: isTern
             )
         }
     }

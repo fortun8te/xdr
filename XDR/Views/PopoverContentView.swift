@@ -138,6 +138,7 @@ struct PopoverContentView: View {
                 ForEach(appState.displays) { display in
                     DisplayCard(display: display,
                                 onSet: { lifecycle.setBrightness($0, for: display.id) },
+                                onEditingEnded: { lifecycle.finishBrightnessAdjustment(for: display.id) },
                                 surface: .popover)
                 }
             }
