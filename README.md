@@ -1,6 +1,6 @@
 # XDR
 
-Quick brightness control for your HDR display. Sits in the menu bar. Drag a slider, see it happen instantly.
+Mac menu-bar brightness for HDR and Pro Display XDR. Goes brighter than the system slider. Drag it, the screen follows, color gamut stays put.
 
 ## What It Does
 
