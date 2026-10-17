@@ -18,6 +18,11 @@ final class AppLifecycleManager {
     /// Brightness engine for displays with no hardware brightness control.
     /// Self-contained; never enters the XDRController boost paths.
     let softwareDimmer = SoftwareDimmer()
+    let ternDDC = TernDDCController()
+
+    /// Deep red dark-adaptation mode. Overlay-only; never touches gamma, so it
+    /// composites cleanly above the XDR boost and the SoftwareDimmer.
+    let nightVision = NightVision()
 
     /// Back-reference to AppState so brightness changes update the menu bar icon.
     var appState: AppState?
@@ -52,6 +57,11 @@ final class AppLifecycleManager {
 
     private var displayParamsObserver: NSObjectProtocol?
 
+    /// While Night Vision is on it owns every display's look. Boost levels are
+    /// parked here and the dimmer is suspended; both restored when it turns off.
+    private var nightVisionSuspendedBoosts: [CGDirectDisplayID: Double] = [:]
+    private(set) var nightVisionOwnsGamma = false
+
     /// Duration after which we send an informational thermal reminder.
     private static let thermalReminderInterval: TimeInterval = 30 * 60 // 30 minutes
 
@@ -73,6 +83,17 @@ final class AppLifecycleManager {
 
         // Register as shared instance for App Intents access
         Self.shared = self
+        ternDDC.onResult = { [weak self] id, result in
+            guard let self, let idx = self.appState?.displays.firstIndex(where: { $0.id == id }) else { return }
+            switch result {
+            case .success(let actual):
+                self.appState?.displays[idx].brightness = actual
+                self.appState?.displays[idx].controlMessage = nil
+            case .failure(let error):
+                self.appState?.displays[idx].brightness = self.ternDDC.brightness(for: id)
+                self.appState?.displays[idx].controlMessage = error.localizedDescription
+            }
+        }
 
         requestNotificationPermission()
         setupKeyboardShortcuts()
@@ -149,6 +170,9 @@ final class AppLifecycleManager {
                 // boost is active), so it is a no-op when the boost survived.
                 for display in self.displayManager.displays
                 where display.supportsHardwareBrightness && !reconnected.contains(display.id) {
+                    // Night Vision owns every gamma table while enabled; do not
+                    // re-assert a boost underneath it.
+                    if self.nightVisionOwnsGamma { break }
                     let saved = self.xdrController.getBrightness(for: display.id)
                     guard saved > XDRConstants.sdrMaxBrightness,
                           Self.gammaWasWiped(display.id) else { continue }
@@ -161,7 +185,10 @@ final class AppLifecycleManager {
                 let freshDisplays = self.displayManager.displays
                 appState.displays = freshDisplays.map { fresh in
                     var display = fresh
-                    if fresh.supportsHardwareBrightness == false {
+                    if fresh.supportsDDCBrightness {
+                        display.brightness = self.ternDDC.brightness(for: fresh.id)
+                        self.ternDDC.refresh(fresh.id)
+                    } else if fresh.supportsHardwareBrightness == false {
                         // Software-dimmed panel: the dimmer is the source of truth
                         // (it re-asserts its own gamma on screen-parameter changes).
                         display.brightness = self.softwareDimmer.brightness(for: fresh.id)
@@ -192,6 +219,11 @@ final class AppLifecycleManager {
         }
 
         for display in displayManager.displays {
+            if display.supportsDDCBrightness {
+                softwareDimmer.releaseForHardwareControl(display.id)
+                ternDDC.refresh(display.id)
+                continue
+            }
             // Software-dimmed panels: pull the saved dim level from the dimmer
             // (which already re-applied its gamma on init) and sync the model.
             if display.supportsHardwareBrightness == false {
@@ -232,11 +264,76 @@ final class AppLifecycleManager {
         // Apply any persisted software-dim levels now that the app has launched.
         // (Deferred out of SoftwareDimmer.init so no overlay window is created early.)
         softwareDimmer.reassertAll()
+
+        // Night Vision drives a per-display gamma LUT for true red, but must not
+        // fight the boost engine or the dimmer for a display's gamma table. Tell it
+        // which displays are already gamma-owned so it uses an overlay there instead.
+        // Night Vision suspends the boost and the dimmer while enabled, so it
+        // always owns the gamma table outright; the overlay fallback is retired.
+        nightVision.isGammaBusy = { _ in false }
+
+        // Restore Night Vision now the app has launched (deferred out of init so no
+        // gamma or overlay is touched early).
+        nightVision.restoreOnLaunch()
+    }
+
+    /// Toggle Night Vision on/off across all displays. Night Vision is
+    /// EXCLUSIVE with the boost and the software dimmer: all three write
+    /// display gamma, and three writers on one LUT is exactly the fight the
+    /// user saw. While Night Vision is on, boosts are parked at SDR max and
+    /// the dimmer is suspended; turning it off restores both.
+    func setNightVisionEnabled(_ enabled: Bool) {
+        if enabled {
+            nightVisionOwnsGamma = true
+            // Park any live boost at the SDR ceiling (saved for restore).
+            for display in displayManager.displays where display.supportsHardwareBrightness {
+                let current = xdrController.getBrightness(for: display.id)
+                if current > XDRConstants.sdrMaxBrightness {
+                    nightVisionSuspendedBoosts[display.id] = current
+                    setBrightness(XDRConstants.sdrMaxBrightness, for: display.id)
+                }
+            }
+            // Hand the gamma tables to Night Vision but KEEP dimming working:
+            // the dimmer stops writing gamma (NV folds the dim scale into its
+            // own red gamma) yet still manages its deep-end black overlay, so
+            // other monitors can still be dimmed while Night Vision is on.
+            nightVision.dimScale = { [weak self] id in
+                self?.softwareDimmer.gammaScale(for: id) ?? 1.0
+            }
+            softwareDimmer.onDimChangedWhileSuspended = { [weak self] _ in
+                self?.nightVision.reapplyGamma()
+            }
+            softwareDimmer.gammaSuspended = true
+            softwareDimmer.reassertAll()   // re-assert overlays only (no gamma)
+            nightVision.setEnabled(true)
+        } else {
+            nightVision.setEnabled(false)
+            // Give the 0.4s disengage ramp time to reset Night Vision's gamma
+            // before the boost and dimmer take their tables back.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(0.7))
+                guard let self, !self.nightVision.isEnabled else { return }
+                self.nightVisionOwnsGamma = false
+                self.softwareDimmer.gammaSuspended = false
+                self.softwareDimmer.onDimChangedWhileSuspended = nil
+                self.softwareDimmer.reassertAll()   // dimmer takes its gamma back
+                let parked = self.nightVisionSuspendedBoosts
+                self.nightVisionSuspendedBoosts = [:]
+                for (displayID, level) in parked {
+                    self.setBrightness(level, for: displayID)
+                }
+            }
+        }
+    }
+
+    /// Set Night Vision intensity (0…1) across all displays.
+    func setNightVisionIntensity(_ value: Double) {
+        nightVision.setIntensity(value)
     }
 
     func toggleXDRForActiveDisplay() {
         guard let display = activeDisplay() else { return }
-        guard display.supportsHardwareBrightness else { return } // no XDR toggle for software-dimmed panels
+        guard !display.supportsDDCBrightness, display.supportsHardwareBrightness else { return } // no XDR toggle for software-dimmed panels
         let current = xdrController.getBrightness(for: display.id)
 
         if current > XDRConstants.sdrMaxBrightness {
@@ -252,6 +349,10 @@ final class AppLifecycleManager {
     func adjustBrightness(by delta: Double) {
         guard let display = activeDisplay() else { return }
 
+        if display.supportsDDCBrightness {
+            setBrightness(ternDDC.brightness(for: display.id) + delta, for: display.id)
+            return
+        }
         // Software-dimmed panels live entirely in 0…1 (1.0 = native brightness).
         if display.supportsHardwareBrightness == false {
             let current = softwareDimmer.brightness(for: display.id)
@@ -279,6 +380,14 @@ final class AppLifecycleManager {
     }
 
     func setBrightness(_ value: Double, for displayID: CGDirectDisplayID) {
+        if TernDisplayIdentity.matches(displayID) {
+            ternDDC.setBrightness(value, for: displayID)
+            if let idx = appState?.displays.firstIndex(where: { $0.id == displayID }) {
+                appState?.displays[idx].brightness = Double(TernDisplayIdentity.percent(value)) / 100
+                appState?.displays[idx].controlMessage = nil
+            }
+            return
+        }
         // Software-dimmed panels take a separate path that never touches the XDR
         // boost machinery. Their range is 0…1 (1.0 = native brightness).
         if isSoftwareDimmed(displayID) {
@@ -289,6 +398,10 @@ final class AppLifecycleManager {
             }
             return
         }
+
+        // While Night Vision owns the displays, the boost stays parked: clamp any
+        // request to the SDR ceiling so a slider drag cannot restart the gamma fight.
+        let value = nightVisionOwnsGamma ? min(value, XDRConstants.sdrMaxBrightness) : value
 
         let wasXDR = (xdrController.getBrightness(for: displayID) > XDRConstants.sdrMaxBrightness)
         let isXDR = (value > XDRConstants.sdrMaxBrightness)
@@ -323,6 +436,10 @@ final class AppLifecycleManager {
         }
     }
 
+    func finishBrightnessAdjustment(for displayID: CGDirectDisplayID) {
+        ternDDC.finishAdjustment(for: displayID)
+    }
+
     /// Called by the UI when the user toggles `Settings → Boost mode`.
     /// Re-applies the current brightness for every display that's currently in XDR range,
     /// which forces the new mode's code path (gamma vs overlay) to engage immediately
@@ -350,9 +467,11 @@ final class AppLifecycleManager {
             NotificationCenter.default.removeObserver(token)
             displayParamsObserver = nil
         }
+        ternDDC.shutdown()
         sleepWakeManager.shutdown()
         xdrController.shutdown()
         softwareDimmer.shutdown()
+        nightVision.shutdown()
     }
 
     private func cancelAllRamps() {
@@ -363,6 +482,8 @@ final class AppLifecycleManager {
     // MARK: - Smooth Transition
 
     private func animateBrightness(from start: Double, to end: Double, for displayID: CGDirectDisplayID) {
+        // DDC hardware writes are coalesced, not animated at 60 writes per second.
+        if TernDisplayIdentity.matches(displayID) { setBrightness(end, for: displayID); return }
         // Fix 4: Respect smoothTransitions flag.
         guard appState?.smoothTransitions != false else {
             setBrightness(end, for: displayID)
@@ -526,7 +647,8 @@ final class AppLifecycleManager {
 
     /// Current brightness for a display, read from whichever engine owns it.
     private func currentBrightness(for displayID: CGDirectDisplayID) -> Double {
-        isSoftwareDimmed(displayID)
+        if TernDisplayIdentity.matches(displayID) { return ternDDC.brightness(for: displayID) }
+        return isSoftwareDimmed(displayID)
             ? softwareDimmer.brightness(for: displayID)
             : xdrController.getBrightness(for: displayID)
     }

@@ -52,6 +52,7 @@ struct MainWindowView: View {
                         ForEach(appState.displays) { display in
                             DisplayCard(display: display,
                                         onSet: { lifecycle.setBrightness($0, for: display.id) },
+                                        onEditingEnded: { lifecycle.finishBrightnessAdjustment(for: display.id) },
                                         surface: .window)
                         }
                     }
@@ -59,6 +60,15 @@ struct MainWindowView: View {
                     .padding(.top, Sp.sm)
                     .padding(.bottom, Sp.sm)
                 }
+
+                NightVisionSection(
+                    isEnabled: lifecycle.nightVision.isEnabled,
+                    intensity: lifecycle.nightVision.intensity,
+                    onToggle: { lifecycle.setNightVisionEnabled($0) },
+                    onSetIntensity: { lifecycle.setNightVisionIntensity($0) }
+                )
+                .padding(.horizontal, Sp.sm)
+                .padding(.bottom, Sp.sm)
 
                 Divider()
                 footer
